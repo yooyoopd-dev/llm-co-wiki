@@ -108,7 +108,11 @@ export function resolveConfig(
     }
   }
 
-  if (preset.provider === "claude-code" || preset.provider === "codex-cli") {
+  if (
+    preset.provider === "claude-code" ||
+    preset.provider === "codex-cli" ||
+    preset.provider === "gemini-cli"
+  ) {
     // Subprocess transport — no apiKey, no endpoint URL. Model id is
     // passed straight to the local CLI's model flag.
     return {
@@ -120,7 +124,7 @@ export function resolveConfig(
       maxContextSize,
       reasoning,
       ingestReasoning,
-      localCliIsolation,
+      localCliIsolation: preset.provider === "gemini-cli" ? false : localCliIsolation,
       codexCliTimeoutMinutes: preset.provider === "codex-cli" ? codexCliTimeoutMinutes : undefined,
       requestTimeoutMinutes,
       ...streamingConfig,

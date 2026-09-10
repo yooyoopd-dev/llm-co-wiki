@@ -595,6 +595,7 @@ pub fn run() {
             // drained on process exit or by claude_cli_kill.
             app.manage(commands::claude_cli::ClaudeCliState::default());
             app.manage(commands::codex_cli::CodexCliState::default());
+            app.manage(commands::gemini_cli::GeminiCliState::default());
             app.manage(commands::file_sync::FileSyncState::default());
             app.manage(agent::session::AgentSessionStore::default());
             app.manage(agent::cancel::AgentCancellationRegistry::default());
@@ -687,6 +688,9 @@ pub fn run() {
             commands::codex_cli::codex_cli_detect,
             commands::codex_cli::codex_cli_spawn,
             commands::codex_cli::codex_cli_kill,
+            commands::gemini_cli::gemini_cli_detect,
+            commands::gemini_cli::gemini_cli_spawn,
+            commands::gemini_cli::gemini_cli_kill,
             commands::extract_images::extract_pdf_images_cmd,
             commands::extract_images::extract_office_images_cmd,
             commands::extract_images::extract_and_save_pdf_images_cmd,

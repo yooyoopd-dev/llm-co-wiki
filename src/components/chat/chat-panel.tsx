@@ -770,7 +770,8 @@ export function ChatPanel() {
 
         const useBackendAgent =
           llmConfig.provider !== "claude-code" &&
-          llmConfig.provider !== "codex-cli"
+          llmConfig.provider !== "codex-cli" &&
+          llmConfig.provider !== "gemini-cli"
 
         if (useBackendAgent) {
           setAgentEvents([

@@ -14,6 +14,9 @@ export type LlmProvider = LlmConfig["provider"]
  *     API key is needed (or accepted) at this layer.
  *   - `codex-cli` spawns the Codex CLI subprocess, which authenticates
  *     via the user's existing Codex/ChatGPT login.
+ *   - `gemini-cli` spawns the Gemini CLI subprocess, which authenticates
+ *     via the auth method recorded in the user's own
+ *     ~/.gemini/settings.json.
  *
  * Hosted providers (openai, anthropic, google, azure, minimax) require a
  * key from the user.
@@ -23,6 +26,7 @@ export const PROVIDERS_WITHOUT_KEY: ReadonlySet<LlmProvider> = new Set<LlmProvid
   "custom",
   "claude-code",
   "codex-cli",
+  "gemini-cli",
 ])
 
 /**

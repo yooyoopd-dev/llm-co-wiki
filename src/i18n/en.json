@@ -491,7 +491,6 @@
       "output": "Output",
       "interface": "Interface",
       "maintenance": "Maintenance",
-      "changelog": "Changelog",
       "about": "About"
     },
     "sections": {
@@ -593,6 +592,7 @@
         "cliDetected": "Detected{{version}}. Ready to use your local {{login}} — no API key needed.",
         "claudeSubscription": "subscription",
         "codexLogin": "Codex login",
+        "geminiLogin": "Gemini CLI login",
         "cliAuthBefore": "If chat fails with an authentication error, run",
         "cliAuthAfter": "in a terminal to refresh the login.",
         "cliUnavailable": "{{name}} CLI not available.",
@@ -955,10 +955,6 @@
           "merged": "Merged",
           "skipped": "Marked not duplicates"
         }
-      },
-      "changelog": {
-        "title": "Changelog",
-        "description": "Notable user-visible changes in each released version, newest first."
       },
       "about": {
         "title": "About",

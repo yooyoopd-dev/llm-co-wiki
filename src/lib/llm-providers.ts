@@ -758,7 +758,7 @@ function assertBigModelImageSupport(config: LlmConfig, messages: ChatMessage[]):
 }
 
 export function supportsImageInput(config: LlmConfig): boolean {
-  if (config.provider === "codex-cli") return false
+  if (config.provider === "codex-cli" || config.provider === "gemini-cli") return false
   if (config.provider === "minimax") return isMiniMaxM3Model(config.model)
   if (isBigModelEndpoint(config)) return isGlmVisionModel(config.model)
   if ((config.provider === "custom") && (config.apiMode ?? "chat_completions") === "anthropic_messages") {
@@ -1051,6 +1051,7 @@ export function getProviderConfig(config: LlmConfig): ProviderConfig {
 
     case "claude-code":
     case "codex-cli":
+    case "gemini-cli":
       // Local CLI providers use subprocess transports (stdin/stdout JSON
       // streams), not HTTP. Dispatch happens one layer up in
       // streamChat() before getProviderConfig is called. Reaching this

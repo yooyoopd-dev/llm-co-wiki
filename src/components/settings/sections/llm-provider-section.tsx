@@ -397,7 +397,8 @@ function PresetRow({
   const needsApiKey =
     preset.provider !== "ollama" &&
     preset.provider !== "claude-code" &&
-    preset.provider !== "codex-cli"
+    preset.provider !== "codex-cli" &&
+    preset.provider !== "gemini-cli"
 
   const resolvedConfig = useMemo(
     () => resolveConfig(preset, ov, useWikiStore.getState().globalLlmConfig),
@@ -583,6 +584,7 @@ function PresetRow({
 
           {preset.provider === "claude-code" && <ClaudeCliStatusPill />}
           {preset.provider === "codex-cli" && <CodexCliStatusPill />}
+          {preset.provider === "gemini-cli" && <GeminiCliStatusPill />}
 
           {isLocalCliProvider && (
             <div className="space-y-2 rounded-md border p-3">
@@ -1250,6 +1252,96 @@ function CodexCliStatusPill() {
                 {t("settings.sections.llm.cliInstallBefore")}{" "}
                 <code className="rounded bg-background/60 px-1 py-0.5 font-mono text-[10px]">
                   npm install -g @openai/codex
+                </code>{" "}
+                {" "}{t("settings.sections.llm.cliInstallAfter")}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GeminiCliStatusPill() {
+  const { t } = useTranslation()
+  const [state, setState] = useState<"loading" | "ok" | "err">("loading")
+  const [result, setResult] = useState<DetectResult | null>(null)
+
+  async function detect() {
+    setState("loading")
+    try {
+      const r = await invoke<DetectResult>("gemini_cli_detect")
+      setResult(r)
+      setState(r.installed ? "ok" : "err")
+    } catch (e) {
+      setResult({
+        installed: false,
+        version: null,
+        path: null,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      setState("err")
+    }
+  }
+
+  useEffect(() => {
+    void detect()
+  }, [])
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Label className="m-0">{t("settings.sections.llm.cliStatus")}</Label>
+        <button
+          type="button"
+          onClick={() => void detect()}
+          className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          disabled={state === "loading"}
+        >
+          {state === "loading" ? t("settings.sections.llm.checkingCli") : t("settings.sections.llm.recheckCli")}
+        </button>
+      </div>
+      <div
+        className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs ${
+          state === "ok"
+            ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+            : state === "err"
+              ? "border-rose-500/40 bg-rose-500/5 text-rose-700 dark:text-rose-400"
+              : "border-border bg-background/50 text-muted-foreground"
+        }`}
+      >
+        {state === "loading" && <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />}
+        {state === "ok" && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+        {state === "err" && <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          {state === "loading" && <div>{t("settings.sections.llm.detectingCli", { name: "Gemini" })}</div>}
+          {state === "ok" && (
+            <>
+              <div>
+                {t("settings.sections.llm.cliDetected", { version: result?.version ? ` ${result.version}` : "", login: t("settings.sections.llm.geminiLogin") })}
+              </div>
+              {result?.path && (
+                <div className="truncate font-mono text-[10px] text-muted-foreground">
+                  {result.path}
+                </div>
+              )}
+              <div className="text-muted-foreground">
+                {t("settings.sections.llm.cliAuthBefore")}{" "}
+                <code className="rounded bg-background/60 px-1 py-0.5 font-mono text-[10px]">
+                  gemini
+                </code>{" "}
+                {" "}{t("settings.sections.llm.cliAuthAfter")}
+              </div>
+            </>
+          )}
+          {state === "err" && (
+            <>
+              <div>{result?.error ?? t("settings.sections.llm.cliUnavailable", { name: "Gemini" })}</div>
+              <div className="text-muted-foreground">
+                {t("settings.sections.llm.cliInstallBefore")}{" "}
+                <code className="rounded bg-background/60 px-1 py-0.5 font-mono text-[10px]">
+                  npm install -g @google/gemini-cli
                 </code>{" "}
                 {" "}{t("settings.sections.llm.cliInstallAfter")}
               </div>
