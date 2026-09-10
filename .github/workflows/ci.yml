@@ -8,12 +8,10 @@ on:
 
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [macos-latest, ubuntu-22.04, windows-latest]
-
-    runs-on: ${{ matrix.platform }}
+    # Windows is the only platform this project ships (see build.yml), so it
+    # is the only one worth gating merges on. The macOS and Linux rows were
+    # removed with the matrix.
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -22,18 +20,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install protoc (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: brew install protobuf
-
-      - name: Install dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler
-
-      - name: Install protoc (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: Install protoc
         run: choco install protoc -y
 
       - name: Rust cache
