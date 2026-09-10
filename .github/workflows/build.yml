@@ -153,11 +153,23 @@ jobs:
           CURRENT_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+
+          # Refuse to delete anything unless this tag's own release actually
+          # has downloads on it. `needs:` already orders this job last, but
+          # the check is cheap and the operation is irreversible.
+          current_assets=$(gh api "repos/${GH_REPO}/releases/tags/${CURRENT_TAG}" \
+            --jq '.assets | length')
+          echo "Release ${CURRENT_TAG} has ${current_assets} asset(s)."
+          if [ "${current_assets}" -eq 0 ]; then
+            echo "::error::Refusing to prune older releases while ${CURRENT_TAG} has no assets."
+            exit 1
+          fi
+
           # Releases themselves (and their notes/tags) are kept — only the
           # binary assets of older releases are removed, so the Releases
           # page stays a readable history while storage holds one build.
           gh api --paginate "repos/${GH_REPO}/releases" \
-            --jq '.[] | select(.tag_name != env.CURRENT_TAG) | .assets[] | [.id, .name] | @tsv' \
+            --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\") | .assets[] | [.id, .name] | @tsv" \
             > assets.tsv
           if [ ! -s assets.tsv ]; then
             echo "No assets on older releases; nothing to prune."
