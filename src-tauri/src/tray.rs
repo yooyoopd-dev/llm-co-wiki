@@ -13,12 +13,12 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show LLM Wiki", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit LLM Wiki", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show LLM-CO-WIKI", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit LLM-CO-WIKI", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("LLM Wiki")
+        .tooltip("LLM-CO-WIKI")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

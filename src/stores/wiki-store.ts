@@ -45,7 +45,7 @@ interface LlmConfig {
    */
   ingestReasoning?: ReasoningConfig
   /**
-   * Local CLI providers only. When true, LLM Wiki asks Claude/Codex CLI
+   * Local CLI providers only. When true, LLM-CO-WIKI asks Claude/Codex CLI
    * to ignore user-level rules/config/MCP/tool state where the CLI exposes
    * such controls. Default false preserves existing advanced-user setups.
    */

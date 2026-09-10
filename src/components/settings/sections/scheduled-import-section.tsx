@@ -130,14 +130,14 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
         <p className="text-xs text-muted-foreground">
           {t("settings.sections.scheduledImport.directoryHelp", {
             defaultValue:
-              "Choose an external folder outside the current LLM Wiki project. Project folders are already handled by source folder monitoring.",
+              "Choose an external folder outside the current LLM-CO-WIKI project. Project folders are already handled by source folder monitoring.",
           })}
         </p>
         {managedPathSelected && (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
             {t("settings.sections.scheduledImport.managedPathWarning", {
               defaultValue:
-                "This path is inside the current LLM Wiki project and is already managed by source folder monitoring. Pick an external folder to avoid duplicate scans.",
+                "This path is inside the current LLM-CO-WIKI project and is already managed by source folder monitoring. Pick an external folder to avoid duplicate scans.",
             })}
           </p>
         )}

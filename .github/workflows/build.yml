@@ -125,7 +125,7 @@ jobs:
           # just produces bundle artifacts — useful for testing a
           # branch build without polluting the Releases page.
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
-          releaseName: ${{ github.event_name == 'push' && format('LLM Wiki {0}', github.ref_name) || '' }}
+          releaseName: ${{ github.event_name == 'push' && format('LLM-CO-WIKI {0}', github.ref_name) || '' }}
           releaseBody: 'See the assets below for download links.'
           releaseDraft: false
           prerelease: false

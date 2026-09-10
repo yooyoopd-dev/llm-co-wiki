@@ -2,11 +2,7 @@ import { useTranslation } from "react-i18next"
 import { CHANGELOG } from "@/lib/changelog"
 
 export function ChangelogSection() {
-  const { t, i18n } = useTranslation()
-  // Match the ui language to either the en or zh highlight list.
-  // Anything other than "zh" falls back to English so unsupported
-  // locales degrade gracefully.
-  const lang: "en" | "zh" = i18n.language?.startsWith("zh") ? "zh" : "en"
+  const { t } = useTranslation()
 
   return (
     <div className="space-y-6">
@@ -34,7 +30,7 @@ export function ChangelogSection() {
               <span className="text-xs text-muted-foreground">{entry.date}</span>
             </div>
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-foreground/90">
-              {entry.highlights[lang].map((line, i) => (
+              {entry.highlights.en.map((line, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
                   <span>{line}</span>

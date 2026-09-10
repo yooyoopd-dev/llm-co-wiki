@@ -35,7 +35,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "llm_wiki_status",
-      description: "Check whether the LLM Wiki desktop local API is reachable and list the current project.",
+      description: "Check whether the LLM-CO-WIKI desktop local API is reachable and list the current project.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -44,7 +44,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "llm_wiki_projects",
-      description: "List known LLM Wiki projects. The response includes currentProject when the desktop app has an active project.",
+      description: "List known LLM-CO-WIKI projects. The response includes currentProject when the desktop app has an active project.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -53,7 +53,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "llm_wiki_set_project",
-      description: "Pin this MCP process session to one LLM Wiki project. Once pinned, project tools cannot access another project until this tool changes the binding.",
+      description: "Pin this MCP process session to one LLM-CO-WIKI project. Once pinned, project tools cannot access another project until this tool changes the binding.",
       inputSchema: {
         type: "object",
         properties: {
@@ -121,7 +121,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "llm_wiki_chat",
-      description: "Ask the LLM Wiki backend Agent a question about a project. This initial backend Agent uses the desktop API's shared retrieval service and returns references.",
+      description: "Ask the LLM-CO-WIKI backend Agent a question about a project. This initial backend Agent uses the desktop API's shared retrieval service and returns references.",
       inputSchema: {
         type: "object",
         properties: {
@@ -308,7 +308,7 @@ async function assertMcpEnabled(): Promise<void> {
   if (health.mcpEnabled === false) {
     throw new McpError(
       ErrorCode.InvalidRequest,
-      "LLM Wiki MCP access is disabled. Enable Settings -> API + MCP -> Enable MCP access in the desktop app.",
+      "LLM-CO-WIKI MCP access is disabled. Enable Settings -> API + MCP -> Enable MCP access in the desktop app.",
     )
   }
 }
@@ -391,7 +391,7 @@ function truncateText(value: string, maxBytes: number): string {
 function formatFileTree(files: ApiFileNode[], truncated = false): string {
   if (files.length === 0) return "No files found."
   const lines: string[] = truncated
-    ? ["[warning] File tree was truncated by the LLM Wiki API maxFiles limit.", ""]
+    ? ["[warning] File tree was truncated by the LLM-CO-WIKI API maxFiles limit.", ""]
     : []
   const walk = (nodes: ApiFileNode[], depth: number) => {
     for (const node of nodes) {
@@ -428,7 +428,7 @@ function formatSearchResults(query: string, search: { results: ApiSearchResult[]
 
 function formatChatResponse(chat: ApiChatResponse): string {
   const lines = [
-    "# LLM Wiki Agent response",
+    "# LLM-CO-WIKI Agent response",
     "",
     `Session: ${chat.sessionId || "(none)"}`,
     chat.mode ? `Mode: ${chat.mode}` : null,
@@ -527,10 +527,10 @@ function formatGraph(nodes: ApiGraphNode[], edges: Array<{ source: string; targe
 async function main(): Promise<void> {
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error(`LLM Wiki MCP server v${VERSION} connected to ${process.env.LLM_WIKI_API_BASE_URL ?? "http://127.0.0.1:19828"}`)
+  console.error(`LLM-CO-WIKI MCP server v${VERSION} connected to ${process.env.LLM_WIKI_API_BASE_URL ?? "http://127.0.0.1:19828"}`)
 }
 
 main().catch((err) => {
-  console.error("Failed to start LLM Wiki MCP server:", err)
+  console.error("Failed to start LLM-CO-WIKI MCP server:", err)
   process.exit(1)
 })

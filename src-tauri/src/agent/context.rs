@@ -68,7 +68,7 @@ fn build_system_context(
     skill_mode: AgentSkillMode,
 ) -> String {
     let mut out = [
-        "You are the LLM Wiki backend Agent.",
+        "You are the LLM-CO-WIKI backend Agent.",
         "Answer using the current project context, available tools, and cited references.",
         "If evidence is insufficient, say what is missing instead of inventing facts.",
         "When using references, mention the relevant page paths naturally.",

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LLM Wiki Clipper",
+  "name": "LLM-CO-WIKI Clipper",
   "version": "0.1.0",
-  "description": "Clip web pages to your LLM Wiki knowledge base",
+  "description": "Clip web pages to your LLM-CO-WIKI knowledge base",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "http://127.0.0.1:19827/*",
@@ -29,7 +29,7 @@
         "default": "Alt+Shift+L",
         "mac": "Command+Shift+L"
       },
-      "description": "Clip the current page to LLM Wiki"
+      "description": "Clip the current page to LLM-CO-WIKI"
     }
   },
   "icons": {

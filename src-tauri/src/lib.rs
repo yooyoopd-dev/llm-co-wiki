@@ -323,7 +323,7 @@ fn mcp_server_entry_path(app: tauri::AppHandle) -> Result<String, String> {
             }
         }
 
-        Err("MCP server entry was not found. Run `npm run mcp:build` from the LLM Wiki repository, then reopen Settings.".to_string())
+        Err("MCP server entry was not found. Run `npm run mcp:build` from the LLM-CO-WIKI repository, then reopen Settings.".to_string())
     })
 }
 
@@ -726,9 +726,9 @@ pub fn run() {
                             let confirmed = app
                                 .dialog()
                                 .message(
-                                    "Quit LLM Wiki? Choose Quit to exit. Choose Hide Window to keep background features running.",
+                                    "Quit LLM-CO-WIKI? Choose Quit to exit. Choose Hide Window to keep background features running.",
                                 )
-                                .title("LLM Wiki")
+                                .title("LLM-CO-WIKI")
                                 .buttons(MessageDialogButtons::OkCancelCustom(
                                     "Quit".to_string(),
                                     "Hide Window".to_string(),

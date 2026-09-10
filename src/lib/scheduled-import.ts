@@ -156,7 +156,7 @@ function notifyManagedScheduledImportPath(project: WikiProject, importRoot: stri
     type: "ingest",
     title: "Scheduled import skipped",
     status: "error",
-    detail: `Scheduled import path is inside or contains the current LLM Wiki project: ${importRoot}. Choose an external folder; project sources are handled by source folder monitoring.`,
+    detail: `Scheduled import path is inside or contains the current LLM-CO-WIKI project: ${importRoot}. Choose an external folder; project sources are handled by source folder monitoring.`,
     filesWritten: [],
   })
 }

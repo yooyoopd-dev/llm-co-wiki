@@ -3986,12 +3986,12 @@ where
 fn build_retrieval_answer(query: &str, references: &[AgentReference]) -> String {
     if references.is_empty() {
         return format!(
-            "I searched the current LLM Wiki project for \"{query}\" but did not find matching wiki pages."
+            "I searched the current LLM-CO-WIKI project for \"{query}\" but did not find matching wiki pages."
         );
     }
 
     let mut out = format!(
-        "I searched the current LLM Wiki project for \"{query}\" and found {} relevant page(s):",
+        "I searched the current LLM-CO-WIKI project for \"{query}\" and found {} relevant page(s):",
         references.len()
     );
     for (idx, reference) in references.iter().take(MAX_CHAT_SEARCH_RESULTS).enumerate() {

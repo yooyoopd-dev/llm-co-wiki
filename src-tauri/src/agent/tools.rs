@@ -422,7 +422,7 @@ pub fn builtin_tool_specs() -> Vec<ToolSpec> {
     vec![
         ToolSpec {
             name: "wiki.search".to_string(),
-            description: "Search generated LLM Wiki pages using backend keyword/vector retrieval."
+            description: "Search generated LLM-CO-WIKI pages using backend keyword/vector retrieval."
                 .to_string(),
             effects: vec![ToolEffect::Read],
             parameters: Some(serde_json::json!({

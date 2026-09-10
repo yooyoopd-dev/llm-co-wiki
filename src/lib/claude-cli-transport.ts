@@ -313,7 +313,7 @@ export async function streamClaudeCodeCli(
  *      `Unauthenticated:` from Claude Code itself, meaning the
  *      user's ~/.claude OAuth token expired / was revoked / they
  *      logged out. We surface that case explicitly because users
- *      otherwise mis-diagnose it as an LLM Wiki bug.
+ *      otherwise mis-diagnose it as an LLM-CO-WIKI bug.
  *   2. unparsedStdout — stdout lines the parser didn't recognize
  *      (non-JSON, unknown event types, the stream-json `error`
  *      event shape). Used as a fallback when stderr is empty —
@@ -334,7 +334,7 @@ export function buildExitError(
     return [
       "Claude Code CLI is not authenticated.",
       "Please open a terminal and run `claude` to complete the OAuth login,",
-      "then retry. (LLM Wiki only spawns the binary — it can't run the",
+      "then retry. (LLM-CO-WIKI only spawns the binary — it can't run the",
       "login flow on your behalf.)",
       stderr ? `\n\n— stderr —\n${stderr}` : "",
     ].join(" ").trim()
@@ -345,7 +345,7 @@ export function buildExitError(
   if (unparsedStdout.trim()) {
     return [
       `claude CLI exited with code ${code} (no stderr).`,
-      "Captured stdout output that LLM Wiki couldn't parse — pasting it",
+      "Captured stdout output that LLM-CO-WIKI couldn't parse — pasting it",
       "here so you can see what the CLI actually emitted:\n",
       unparsedStdout.trim(),
     ].join(" ")

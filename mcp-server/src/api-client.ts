@@ -351,20 +351,20 @@ export class LlmWikiApiClient {
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
       })
     } catch (err) {
-      throw new Error(`LLM Wiki API request failed. Is the desktop app running? ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(`LLM-CO-WIKI API request failed. Is the desktop app running? ${err instanceof Error ? err.message : String(err)}`)
     }
 
     const text = await response.text()
     let json: Record<string, unknown>
     try {
-      json = text ? requireObject(JSON.parse(text), "LLM Wiki API response") : {}
+      json = text ? requireObject(JSON.parse(text), "LLM-CO-WIKI API response") : {}
     } catch (err) {
-      throw new Error(`LLM Wiki API returned non-JSON response (${response.status}): ${text.slice(0, 300)}${err instanceof Error ? ` (${err.message})` : ""}`)
+      throw new Error(`LLM-CO-WIKI API returned non-JSON response (${response.status}): ${text.slice(0, 300)}${err instanceof Error ? ` (${err.message})` : ""}`)
     }
 
     if (!response.ok || json.ok === false) {
       const message = typeof json.error === "string" ? json.error : response.statusText
-      throw new Error(`LLM Wiki API ${response.status}: ${message}`)
+      throw new Error(`LLM-CO-WIKI API ${response.status}: ${message}`)
     }
     return json
   }

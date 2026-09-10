@@ -143,7 +143,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
   const sampleMcpConfig = useMemo(() => {
     if (!mcpEntryPath) return ""
     const env = health?.tokenSource === "env"
-      ? { LLM_WIKI_API_TOKEN: "<same value as the LLM Wiki process environment>" }
+      ? { LLM_WIKI_API_TOKEN: "<same value as the LLM-CO-WIKI process environment>" }
       : draft.apiToken
         ? { LLM_WIKI_API_TOKEN: draft.apiToken }
         : draft.apiAllowUnauthenticated
@@ -266,7 +266,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.apiServer.description", {
             defaultValue:
-              "Expose LLM Wiki to your own tools through the local HTTP API, and optionally through the bundled MCP server for agent clients.",
+              "Expose LLM-CO-WIKI to your own tools through the local HTTP API, and optionally through the bundled MCP server for agent clients.",
           })}
         </p>
       </div>
@@ -672,7 +672,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
               : !mcpEntryPath
                 ? t("settings.sections.apiServer.mcpPathUnavailable", {
                     defaultValue:
-                      "MCP server entry was not found. Run `npm run mcp:build` from the LLM Wiki repository, then reopen Settings.",
+                      "MCP server entry was not found. Run `npm run mcp:build` from the LLM-CO-WIKI repository, then reopen Settings.",
                   })
               : sampleMcpConfig}
           </pre>

@@ -494,11 +494,11 @@ async fn resolve_claude_working_directory(value: Option<String>) -> Result<PathB
     let index_path = path.join("wiki").join("index.md");
     let index_meta = tokio::fs::metadata(&index_path).await.map_err(|e| {
         eprintln!("[claude-cli] failed to read wiki/index.md metadata for {raw}: {e}");
-        format!("Claude Code CLI working directory must be an LLM Wiki project containing wiki/index.md: {raw}")
+        format!("Claude Code CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}")
     })?;
     if !index_meta.is_file() {
         return Err(format!(
-            "Claude Code CLI working directory must be an LLM Wiki project containing wiki/index.md: {raw}"
+            "Claude Code CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}"
         ));
     }
     tokio::fs::canonicalize(path)

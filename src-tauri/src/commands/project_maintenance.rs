@@ -237,7 +237,7 @@ fn import_project_archive_inner(
         }
     }
     if !has_project_index {
-        return Err("Archive is not an LLM Wiki project (wiki/index.md is missing)".into());
+        return Err("Archive is not an LLM-CO-WIKI project (wiki/index.md is missing)".into());
     }
     let root = PathBuf::from(destination);
     if root.exists()
