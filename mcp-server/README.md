@@ -1,13 +1,13 @@
-# LLM Wiki MCP Server
+# LLM-CO-WIKI MCP Server
 
-This package exposes the running LLM Wiki desktop app as a Model Context Protocol server.
+This package exposes the running LLM-CO-WIKI desktop app as a Model Context Protocol server.
 
 It does **not** scan project folders directly and does **not** copy the app's search or graph logic. Every tool calls the local desktop API at `http://127.0.0.1:19828/api/v1`, so MCP clients use the same project registry, file permissions, search backend, graph backend, and Source Watch rules as the app.
 
 ## Requirements
 
 - Node.js 20+
-- LLM Wiki desktop app running
+- LLM-CO-WIKI desktop app running
 - Settings → API + MCP → "Enable local HTTP API"
 - Settings → API + MCP → "Enable MCP access"
 - Either:

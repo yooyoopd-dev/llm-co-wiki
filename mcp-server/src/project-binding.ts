@@ -15,7 +15,7 @@ export class McpProjectBinding {
     const candidate = requested === "current"
       ? current
       : projects.find((project) => project.id === requested || project.path === requested) ?? null
-    if (!candidate) throw new Error(`Unknown LLM Wiki project: ${requested}`)
+    if (!candidate) throw new Error(`Unknown LLM-CO-WIKI project: ${requested}`)
     this.pinned = candidate
     return candidate
   }

@@ -277,5 +277,5 @@ test("API errors include status and server message", async () => {
   )
 
   const client = new LlmWikiApiClient({ fetchImpl })
-  await assert.rejects(() => client.projects(), /LLM Wiki API 401: Unauthorized/)
+  await assert.rejects(() => client.projects(), /LLM-CO-WIKI API 401: Unauthorized/)
 })

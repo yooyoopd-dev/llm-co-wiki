@@ -42,7 +42,7 @@ async function checkConnection() {
     if (res.status === 401) throw new Error("Access token required or invalid");
     if (data.ok) {
       statusBar.className = "status connected";
-      statusBar.textContent = "✓ Connected to LLM Wiki";
+      statusBar.textContent = "✓ Connected to LLM-CO-WIKI";
       await loadProjects();
       return true;
     }
@@ -52,7 +52,7 @@ async function checkConnection() {
   statusBar.className = "status disconnected";
   statusBar.textContent = connectionError.includes("token")
     ? "✗ Access token required or invalid"
-    : "✗ Cannot connect to LLM Wiki"
+    : "✗ Cannot connect to LLM-CO-WIKI"
   statusBar.title = connectionError;
   clipBtn.disabled = true;
   projectSelect.innerHTML = '<option value="">App not running</option>';
@@ -120,7 +120,7 @@ async function sendClip() {
 
   clipBtn.disabled = true;
   statusBar.className = "status sending";
-  statusBar.textContent = "⏳ Sending to LLM Wiki...";
+  statusBar.textContent = "⏳ Sending to LLM-CO-WIKI...";
 
   try {
     const result = await clipperCore.submitClip({

@@ -20,6 +20,7 @@ export type Provider =
   | "minimax"
   | "claude-code"
   | "codex-cli"
+  | "gemini-cli"
 
 export interface LlmPreset {
   /** Stable id used as the dropdown value. */
@@ -113,6 +114,19 @@ export const LLM_PRESETS: LlmPreset[] = [
       "gpt-5.2",
     ],
     suggestedContextSize: 200000,
+  },
+  {
+    id: "gemini-cli",
+    label: "Gemini CLI (local)",
+    hint: "Uses the local `gemini` binary — no API key needed",
+    provider: "gemini-cli",
+    defaultModel: "gemini-2.5-pro",
+    suggestedModels: [
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ],
+    suggestedContextSize: 1000000,
   },
   {
     id: "openai",

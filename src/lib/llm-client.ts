@@ -53,6 +53,17 @@ async function streamViaCodexCli(
   return mod.streamCodexCli(config, messages, callbacks, signal, requestOverrides)
 }
 
+async function streamViaGeminiCli(
+  config: LlmConfig,
+  messages: import("./llm-providers").ChatMessage[],
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+  requestOverrides?: RequestOverrides,
+) {
+  const mod = await import("./gemini-cli-transport")
+  return mod.streamGeminiCli(config, messages, callbacks, signal, requestOverrides)
+}
+
 function parseLines(
   decoder: TextDecoder,
   chunk: Uint8Array,
@@ -193,6 +204,16 @@ export async function streamChat(
 
   if (config.provider === "codex-cli") {
     return streamViaCodexCli(
+      config,
+      messages,
+      config.streamingEnabled === false ? bufferedStreamCallbacks(callbacks) : callbacks,
+      signal,
+      requestOverrides,
+    )
+  }
+
+  if (config.provider === "gemini-cli") {
+    return streamViaGeminiCli(
       config,
       messages,
       config.streamingEnabled === false ? bufferedStreamCallbacks(callbacks) : callbacks,

@@ -1,7 +1,7 @@
 [package]
 name = "llm-wiki"
-version = "0.6.11"
-description = "LLM Wiki - A personal knowledge base for LLM concepts"
+version = "0.6.12"
+description = "LLM-CO-WIKI - A personal knowledge base for LLM concepts"
 authors = []
 edition = "2021"
 # AnyDoc and its archive/spreadsheet dependencies require Rust 1.88. Declaring

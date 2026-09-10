@@ -1,8 +1,16 @@
-//! Codex CLI subprocess transport.
+//! Gemini CLI subprocess transport.
 //!
-//! This mirrors the Claude Code CLI transport, but treats `codex` as a
-//! local completion engine via `codex exec --json`. The webview can only
-//! spawn this fixed command; it cannot execute arbitrary shell commands.
+//! Sibling of `codex_cli.rs`, but Gemini CLI does not stream JSONL: with
+//! `-o json` it prints a single envelope
+//! (`{ session_id, response, stats, error }`) once the turn is finished, and
+//! puts the *error* envelope on stderr with exit code 41. So there is nothing
+//! to emit per line — this command collects stdout/stderr and fires one
+//! `gemini-cli:{stream_id}:done` event; the TS transport opens the envelope.
+//!
+//! Flag choices and the failure modes they defend against are documented on
+//! `build_gemini_cli_args`; they come from the measured behaviour of Gemini
+//! CLI 0.58.0 recorded in yooyoopd-dev/co-secondbrain
+//! (`app/src/core/agent/gemini.ts`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,7 +30,7 @@ use tokio::sync::Mutex;
 use super::cli_resolver::{child_path_env, find_cli_command};
 
 #[derive(Default)]
-pub struct CodexCliState {
+pub struct GeminiCliState {
     children: Arc<Mutex<HashMap<String, Child>>>,
 }
 
@@ -34,11 +42,9 @@ pub struct DetectResult {
     error: Option<String>,
 }
 
-const DEFAULT_CODEX_SPAWN_TIMEOUT_MINUTES: u64 = 10;
-const MIN_CODEX_SPAWN_TIMEOUT_MINUTES: u64 = 1;
-const MAX_CODEX_SPAWN_TIMEOUT_MINUTES: u64 = 240;
+const GEMINI_SPAWN_TIMEOUT_MINUTES: u64 = 10;
 const STDERR_LIMIT_BYTES: usize = 1024 * 1024;
-const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+const STDOUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 
 fn append_capped_line(collected: &mut String, line: &str, limit_bytes: usize) {
     if collected.len() >= limit_bytes {
@@ -55,8 +61,8 @@ fn append_capped_line(collected: &mut String, line: &str, limit_bytes: usize) {
     }
 }
 
-async fn find_codex_command() -> Result<PathBuf, String> {
-    find_cli_command("codex", &["codex.cmd", "codex.exe"]).await
+async fn find_gemini_command() -> Result<PathBuf, String> {
+    find_cli_command("gemini", &["gemini.cmd", "gemini.exe"]).await
 }
 
 fn suppress_windows_console(_cmd: &mut Command) {
@@ -68,8 +74,8 @@ fn suppress_windows_console(_cmd: &mut Command) {
 }
 
 #[tauri::command]
-pub async fn codex_cli_detect() -> Result<DetectResult, String> {
-    let path = match find_codex_command().await {
+pub async fn gemini_cli_detect() -> Result<DetectResult, String> {
+    let path = match find_gemini_command().await {
         Ok(p) => p,
         Err(error) => {
             return Ok(DetectResult {
@@ -84,9 +90,9 @@ pub async fn codex_cli_detect() -> Result<DetectResult, String> {
     let path_str = path.to_string_lossy().to_string();
     let mut cmd = Command::new(&path);
     suppress_windows_console(&mut cmd);
-    // `codex` is a node shim (`#!/usr/bin/env node`); under a GUI launch the
-    // inherited PATH lacks node, so hand it the login shell PATH or its
-    // shebang fails with `env: node: No such file or directory`.
+    // `gemini` is a node shim; under a GUI launch the inherited PATH lacks
+    // node, so hand it the login shell PATH or its shebang fails with
+    // `env: node: No such file or directory`.
     if let Some(path_env) = child_path_env().await {
         cmd.env("PATH", path_env);
     }
@@ -94,10 +100,18 @@ pub async fn codex_cli_detect() -> Result<DetectResult, String> {
 
     match output {
         Ok(Ok(out)) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            // `gemini --version` has printed update notices above the version
+            // itself; the version is the last non-empty line.
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let version = stdout
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .next_back()
+                .map(str::to_string);
             Ok(DetectResult {
                 installed: true,
-                version: Some(stdout),
+                version,
                 path: Some(path_str),
                 error: None,
             })
@@ -109,7 +123,7 @@ pub async fn codex_cli_detect() -> Result<DetectResult, String> {
                 version: None,
                 path: Some(path_str),
                 error: Some(if stderr.is_empty() {
-                    format!("`codex --version` exited with {}", out.status)
+                    format!("`gemini --version` exited with {}", out.status)
                 } else {
                     stderr
                 }),
@@ -119,42 +133,40 @@ pub async fn codex_cli_detect() -> Result<DetectResult, String> {
             installed: false,
             version: None,
             path: Some(path_str),
-            error: Some(format!("Failed to spawn `codex`: {e}")),
+            error: Some(format!("Failed to spawn `gemini`: {e}")),
         }),
         Err(_) => Ok(DetectResult {
             installed: false,
             version: None,
             path: Some(path_str),
-            error: Some("`codex --version` timed out after 3s".to_string()),
+            error: Some("`gemini --version` timed out after 3s".to_string()),
         }),
     }
 }
 
 #[tauri::command]
-pub async fn codex_cli_spawn(
+pub async fn gemini_cli_spawn(
     app: AppHandle,
-    state: State<'_, CodexCliState>,
+    state: State<'_, GeminiCliState>,
     stream_id: String,
     model: String,
     prompt: String,
-    isolate_local_config: bool,
-    timeout_minutes: Option<u64>,
     working_directory: Option<String>,
 ) -> Result<(), String> {
     if prompt.trim().is_empty() {
-        return Err("No prompt to send to codex CLI".to_string());
+        return Err("No prompt to send to gemini CLI".to_string());
     }
 
-    let working_directory = resolve_codex_working_directory(working_directory).await?;
-    let codex = find_codex_command().await?;
-    let mut cmd = Command::new(&codex);
+    let working_directory = resolve_gemini_working_directory(working_directory).await?;
+    let gemini = find_gemini_command().await?;
+    let mut cmd = Command::new(&gemini);
     suppress_windows_console(&mut cmd);
-    // See `codex_cli_detect`: the node shim needs the login shell PATH at run
+    // See `gemini_cli_detect`: the node shim needs the login shell PATH at run
     // time so its shebang resolves `node` under a GUI launch.
     if let Some(path_env) = child_path_env().await {
         cmd.env("PATH", path_env);
     }
-    cmd.args(build_codex_cli_args(&model, isolate_local_config));
+    cmd.args(build_gemini_cli_args(&model));
     cmd.current_dir(&working_directory);
 
     cmd.stdin(Stdio::piped())
@@ -164,7 +176,7 @@ pub async fn codex_cli_spawn(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to spawn codex: {e}"))?;
+        .map_err(|e| format!("Failed to spawn gemini: {e}"))?;
 
     let mut stdin = child
         .stdin
@@ -182,11 +194,11 @@ pub async fn codex_cli_spawn(
     stdin
         .write_all(prompt.as_bytes())
         .await
-        .map_err(|e| format!("Failed to write to codex stdin: {e}"))?;
+        .map_err(|e| format!("Failed to write to gemini stdin: {e}"))?;
     stdin
         .flush()
         .await
-        .map_err(|e| format!("Failed to flush codex stdin: {e}"))?;
+        .map_err(|e| format!("Failed to flush gemini stdin: {e}"))?;
     drop(stdin);
 
     state.children.lock().await.insert(stream_id.clone(), child);
@@ -196,12 +208,10 @@ pub async fn codex_cli_spawn(
     let timed_out = Arc::new(AtomicBool::new(false));
     let timeout_flag = Arc::clone(&timed_out);
     let timeout_stream_id = stream_id.clone();
-    let timeout_minutes = codex_spawn_timeout_minutes(timeout_minutes);
-    let timeout_duration = Duration::from_secs(timeout_minutes * 60);
+    let timeout_duration = Duration::from_secs(GEMINI_SPAWN_TIMEOUT_MINUTES * 60);
     let app_for_task = app.clone();
     let stream_id_task = stream_id.clone();
-    let topic = format!("codex-cli:{stream_id}");
-    let done_topic = format!("codex-cli:{stream_id}:done");
+    let done_topic = format!("gemini-cli:{stream_id}:done");
 
     tokio::spawn(async move {
         tokio::time::sleep(timeout_duration).await;
@@ -219,24 +229,21 @@ pub async fn codex_cli_spawn(
         let stderr_task = tokio::spawn(async move {
             let mut collected = String::new();
             while let Ok(Some(line)) = stderr_reader.next_line().await {
-                eprintln!("[codex-cli stderr] {line}");
+                eprintln!("[gemini-cli stderr] {line}");
                 append_capped_line(&mut collected, &line, STDERR_LIMIT_BYTES);
             }
             collected
         });
 
+        // Unlike Codex, nothing is emitted per line: the whole answer arrives
+        // as one JSON envelope, so the buffer is only handed over at the end.
         let mut stdout_text = String::new();
         loop {
             match reader.next_line().await {
-                Ok(Some(line)) => {
-                    append_capped_line(&mut stdout_text, &line, STDOUT_LIMIT_BYTES);
-                    if app.emit(&topic, line).is_err() {
-                        break;
-                    }
-                }
+                Ok(Some(line)) => append_capped_line(&mut stdout_text, &line, STDOUT_LIMIT_BYTES),
                 Ok(None) => break,
                 Err(e) => {
-                    eprintln!("[codex-cli stdout] read error: {e}");
+                    eprintln!("[gemini-cli stdout] read error: {e}");
                     break;
                 }
             }
@@ -258,7 +265,7 @@ pub async fn codex_cli_spawn(
                 stderr_text.push('\n');
             }
             stderr_text.push_str(&format!(
-                "Codex CLI timed out after {timeout_minutes} minutes."
+                "Gemini CLI timed out after {GEMINI_SPAWN_TIMEOUT_MINUTES} minutes."
             ));
         } else if stderr_text.len() >= STDERR_LIMIT_BYTES {
             stderr_text.push_str("\n[stderr truncated]");
@@ -286,74 +293,72 @@ pub async fn codex_cli_spawn(
     Ok(())
 }
 
-fn codex_spawn_timeout_minutes(value: Option<u64>) -> u64 {
-    value.unwrap_or(DEFAULT_CODEX_SPAWN_TIMEOUT_MINUTES).clamp(
-        MIN_CODEX_SPAWN_TIMEOUT_MINUTES,
-        MAX_CODEX_SPAWN_TIMEOUT_MINUTES,
-    )
-}
-
-fn build_codex_cli_args(model: &str, isolate_local_config: bool) -> Vec<String> {
-    let mut args = vec!["-a".to_string(), "never".to_string(), "exec".to_string()];
-
-    if isolate_local_config {
-        args.extend([
-            "--ignore-user-config".to_string(),
-            "--ignore-rules".to_string(),
-        ]);
+/// Flags, and why each one is here:
+///
+/// * `--skip-trust` — clears the folder-trust gate. Without it the CLI can
+///   refuse to run in a project directory it has not been told to trust.
+/// * `--approval-mode plan` — read-only. The model may look at the project
+///   but cannot write files or run commands; this transport is a completion
+///   engine, not an agent with a workspace.
+/// * `-o json` — the machine-readable envelope. Plain stdout mixes the answer
+///   with the CLI's own chrome.
+/// * `-m <model>` — the preset's model id.
+///
+/// The prompt deliberately does *not* go through `-p`: it is written to stdin,
+/// so a long prompt cannot hit the platform's argv length limit.
+fn build_gemini_cli_args(model: &str) -> Vec<String> {
+    let mut args = vec![
+        "--skip-trust".to_string(),
+        "--approval-mode".to_string(),
+        "plan".to_string(),
+        "-o".to_string(),
+        "json".to_string(),
+    ];
+    let model = model.trim();
+    if !model.is_empty() {
+        args.extend(["-m".to_string(), model.to_string()]);
     }
-
-    args.extend([
-        "--json".to_string(),
-        "--skip-git-repo-check".to_string(),
-        "--sandbox".to_string(),
-        "read-only".to_string(),
-        "--ephemeral".to_string(),
-        "--model".to_string(),
-        model.to_string(),
-        "-".to_string(),
-    ]);
     args
 }
 
-async fn resolve_codex_working_directory(value: Option<String>) -> Result<PathBuf, String> {
+async fn resolve_gemini_working_directory(value: Option<String>) -> Result<PathBuf, String> {
     let raw = value
         .as_deref()
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| "Codex CLI requires an active project working directory".to_string())?;
+        .ok_or_else(|| "Gemini CLI requires an active project working directory".to_string())?;
     let path = Path::new(raw.as_str());
     if !path.is_absolute() {
-        return Err("Codex CLI working directory must be an absolute project path".to_string());
+        return Err("Gemini CLI working directory must be an absolute project path".to_string());
     }
     let path_meta = tokio::fs::metadata(path).await.map_err(|e| {
-        eprintln!("[codex-cli] failed to read working directory metadata {raw}: {e}");
-        format!("Codex CLI working directory does not exist or cannot be read: {raw}")
+        eprintln!("[gemini-cli] failed to read working directory metadata {raw}: {e}");
+        format!("Gemini CLI working directory does not exist or cannot be read: {raw}")
     })?;
     if !path_meta.is_dir() {
         return Err(format!(
-            "Codex CLI working directory is not a directory: {raw}"
+            "Gemini CLI working directory is not a directory: {raw}"
         ));
     }
     let index_path = path.join("wiki").join("index.md");
     let index_meta = tokio::fs::metadata(&index_path).await.map_err(|e| {
-        eprintln!("[codex-cli] failed to read wiki/index.md metadata for {raw}: {e}");
-        format!("Codex CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}")
+        eprintln!("[gemini-cli] failed to read wiki/index.md metadata for {raw}: {e}");
+        format!("Gemini CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}")
     })?;
     if !index_meta.is_file() {
         return Err(format!(
-            "Codex CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}"
+            "Gemini CLI working directory must be an LLM-CO-WIKI project containing wiki/index.md: {raw}"
         ));
     }
     tokio::fs::canonicalize(path)
         .await
-        .map_err(|e| format!("Failed to canonicalize Codex CLI working directory {raw}: {e}"))
+        .map_err(|e| format!("Failed to canonicalize Gemini CLI working directory {raw}: {e}"))
 }
 
 #[tauri::command]
-pub async fn codex_cli_kill(
-    state: State<'_, CodexCliState>,
+pub async fn gemini_cli_kill(
+    state: State<'_, GeminiCliState>,
     stream_id: String,
 ) -> Result<(), String> {
     if let Some(mut child) = state.children.lock().await.remove(&stream_id) {
@@ -367,18 +372,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn append_capped_line_appends_newline_when_space_remains() {
-        let mut out = String::new();
-        append_capped_line(&mut out, "hello", 16);
-        assert_eq!(out, "hello\n");
-    }
-
-    #[test]
     fn append_capped_line_never_exceeds_limit() {
         let mut out = String::new();
         append_capped_line(&mut out, "abcdef", 4);
         assert_eq!(out, "abcd");
-        assert_eq!(out.len(), 4);
         append_capped_line(&mut out, "ignored", 4);
         assert_eq!(out, "abcd");
     }
@@ -393,50 +390,24 @@ mod tests {
     }
 
     #[test]
-    fn codex_spawn_timeout_minutes_defaults_and_clamps() {
-        assert_eq!(
-            codex_spawn_timeout_minutes(None),
-            DEFAULT_CODEX_SPAWN_TIMEOUT_MINUTES
-        );
-        assert_eq!(
-            codex_spawn_timeout_minutes(Some(0)),
-            MIN_CODEX_SPAWN_TIMEOUT_MINUTES
-        );
-        assert_eq!(codex_spawn_timeout_minutes(Some(42)), 42);
-        assert_eq!(
-            codex_spawn_timeout_minutes(Some(999)),
-            MAX_CODEX_SPAWN_TIMEOUT_MINUTES
-        );
-    }
-
-    #[test]
-    fn codex_args_do_not_isolate_local_config_by_default() {
-        let args = build_codex_cli_args("gpt-5", false);
-
+    fn gemini_args_are_read_only_and_machine_readable() {
+        let args = build_gemini_cli_args("gemini-2.5-pro");
+        assert!(args.contains(&"--skip-trust".to_string()));
         assert!(args
-            .windows(3)
-            .any(|pair| pair[0] == "-a" && pair[1] == "never" && pair[2] == "exec"));
-        assert!(args.contains(&"--model".to_string()));
-        assert!(args.contains(&"gpt-5".to_string()));
-        assert!(!args.contains(&"--ignore-user-config".to_string()));
-        assert!(!args.contains(&"--ignore-rules".to_string()));
+            .windows(2)
+            .any(|pair| pair[0] == "--approval-mode" && pair[1] == "plan"));
+        assert!(args.windows(2).any(|pair| pair[0] == "-o" && pair[1] == "json"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-m" && pair[1] == "gemini-2.5-pro"));
+        // The prompt goes over stdin, never as an argument.
+        assert!(!args.contains(&"-p".to_string()));
     }
 
     #[test]
-    fn codex_args_can_isolate_user_config_and_rules() {
-        let args = build_codex_cli_args("gpt-5", true);
-        let exec_pos = args.iter().position(|arg| arg == "exec").expect("exec arg");
-        let ignore_config_pos = args
-            .iter()
-            .position(|arg| arg == "--ignore-user-config")
-            .expect("ignore-user-config arg");
-        let ignore_rules_pos = args
-            .iter()
-            .position(|arg| arg == "--ignore-rules")
-            .expect("ignore-rules arg");
-
-        assert!(ignore_config_pos > exec_pos);
-        assert!(ignore_rules_pos > exec_pos);
+    fn gemini_args_omit_the_model_flag_when_no_model_is_set() {
+        let args = build_gemini_cli_args("   ");
+        assert!(!args.contains(&"-m".to_string()));
     }
 
     struct TestDir(PathBuf);
@@ -448,61 +419,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn codex_working_directory_requires_absolute_existing_project() {
-        assert!(resolve_codex_working_directory(None)
+    async fn gemini_working_directory_requires_absolute_existing_project() {
+        assert!(resolve_gemini_working_directory(None)
             .await
             .unwrap_err()
             .contains("requires an active project"));
-        assert!(resolve_codex_working_directory(Some("".to_string()))
-            .await
-            .unwrap_err()
-            .contains("requires an active project"));
-        assert!(resolve_codex_working_directory(Some("   ".to_string()))
+        assert!(resolve_gemini_working_directory(Some("   ".to_string()))
             .await
             .unwrap_err()
             .contains("requires an active project"));
         assert!(
-            resolve_codex_working_directory(Some("relative/project".to_string()))
+            resolve_gemini_working_directory(Some("relative/project".to_string()))
                 .await
                 .unwrap_err()
                 .contains("absolute")
         );
 
         let missing =
-            std::env::temp_dir().join(format!("llm-wiki-codex-cli-missing-{}", std::process::id()));
+            std::env::temp_dir().join(format!("llm-wiki-gemini-cli-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&missing);
         assert!(
-            resolve_codex_working_directory(Some(missing.to_string_lossy().to_string()))
+            resolve_gemini_working_directory(Some(missing.to_string_lossy().to_string()))
                 .await
                 .unwrap_err()
                 .contains("does not exist or cannot be read")
         );
 
-        let file_path =
-            std::env::temp_dir().join(format!("llm-wiki-codex-cli-file-{}", std::process::id()));
-        let _ = std::fs::remove_file(&file_path);
-        std::fs::write(&file_path, "not a directory").expect("temp file");
-        struct TestFile(PathBuf);
-        impl Drop for TestFile {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_file(&self.0);
-            }
-        }
-        let _file_guard = TestFile(file_path.clone());
-        assert!(
-            resolve_codex_working_directory(Some(file_path.to_string_lossy().to_string()))
-                .await
-                .unwrap_err()
-                .contains("not a directory")
-        );
-
         let dir =
-            std::env::temp_dir().join(format!("llm-wiki-codex-cli-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("llm-wiki-gemini-cli-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("tempdir");
         let _guard = TestDir(dir.clone());
         assert!(
-            resolve_codex_working_directory(Some(dir.to_string_lossy().to_string()))
+            resolve_gemini_working_directory(Some(dir.to_string_lossy().to_string()))
                 .await
                 .unwrap_err()
                 .contains("wiki/index.md")
@@ -510,17 +459,8 @@ mod tests {
 
         let wiki_dir = dir.join("wiki");
         std::fs::create_dir_all(&wiki_dir).expect("wiki dir");
-        let index_dir = wiki_dir.join("index.md");
-        std::fs::create_dir_all(&index_dir).expect("index dir");
-        assert!(
-            resolve_codex_working_directory(Some(dir.to_string_lossy().to_string()))
-                .await
-                .unwrap_err()
-                .contains("wiki/index.md")
-        );
-        std::fs::remove_dir_all(&index_dir).expect("remove index dir");
         std::fs::write(wiki_dir.join("index.md"), "# Index\n").expect("index");
-        let resolved = resolve_codex_working_directory(Some(dir.to_string_lossy().to_string()))
+        let resolved = resolve_gemini_working_directory(Some(dir.to_string_lossy().to_string()))
             .await
             .expect("valid project path");
         assert_eq!(resolved, dir.canonicalize().expect("canonical tempdir"));

@@ -8,7 +8,6 @@ import {
   Info,
   Image as ImageIcon,
   Network,
-  History,
   Wrench,
   Clock,
   FolderSync,
@@ -42,7 +41,6 @@ import { SourceWatchSection } from "./sections/source-watch-section"
 import { MineruSection } from "./sections/mineru-section"
 import { ApiServerSection } from "./sections/api-server-section"
 import { GeneralSection } from "./sections/general-section"
-import { ChangelogSection } from "./sections/changelog-section"
 import { MaintenanceSection } from "./sections/maintenance-section"
 import { AboutSection } from "./sections/about-section"
 
@@ -60,7 +58,6 @@ type CategoryId =
   | "output"
   | "interface"
   | "maintenance"
-  | "changelog"
   | "about"
 
 interface Category {
@@ -86,7 +83,6 @@ const CATEGORIES: Category[] = [
   { id: "output", labelKey: "settings.categories.output", icon: Languages },
   { id: "interface", labelKey: "settings.categories.interface", icon: Palette },
   { id: "maintenance", labelKey: "settings.categories.maintenance", icon: Wrench },
-  { id: "changelog", labelKey: "settings.categories.changelog", icon: History },
   { id: "about", labelKey: "settings.categories.about", icon: Info },
 ]
 
@@ -651,8 +647,6 @@ export function SettingsView() {
         return <InterfaceSection draft={draft} setDraft={setDraft} onThemeChange={applyTheme} />
       case "maintenance":
         return <MaintenanceSection />
-      case "changelog":
-        return <ChangelogSection />
       case "about":
         return <AboutSection />
     }

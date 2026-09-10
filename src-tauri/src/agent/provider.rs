@@ -72,7 +72,7 @@ impl LlmConfig {
             "custom" => has_model && !self.custom_endpoint.trim().is_empty(),
             // CLI transports need subprocess/session wiring and are handled in
             // a later Agent transport layer, not by this HTTP provider.
-            "claude-code" | "codex-cli" => false,
+            "claude-code" | "codex-cli" | "gemini-cli" => false,
             _ => false,
         }
     }

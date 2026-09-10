@@ -206,7 +206,7 @@ export function MaintenanceSection() {
 
   const handleExportProject = useCallback(async () => {
     if (!project) return
-    const destination = await save({ defaultPath: `${project.name}.llmwiki.zip`, filters: [{ name: "LLM Wiki project", extensions: ["zip"] }] })
+    const destination = await save({ defaultPath: `${project.name}.llmwiki.zip`, filters: [{ name: "LLM-CO-WIKI project", extensions: ["zip"] }] })
     if (!destination) return
     setProjectToolBusy(true)
     try {
@@ -216,7 +216,7 @@ export function MaintenanceSection() {
   }, [project, t])
 
   const handleImportProject = useCallback(async () => {
-    const archive = await open({ multiple: false, filters: [{ name: "LLM Wiki project", extensions: ["zip"] }] })
+    const archive = await open({ multiple: false, filters: [{ name: "LLM-CO-WIKI project", extensions: ["zip"] }] })
     if (!archive || Array.isArray(archive)) return
     const destination = await open({ directory: true, multiple: false, createDirectories: true })
     if (!destination || Array.isArray(destination)) return

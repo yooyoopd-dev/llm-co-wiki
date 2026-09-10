@@ -770,7 +770,8 @@ export function ChatPanel() {
 
         const useBackendAgent =
           llmConfig.provider !== "claude-code" &&
-          llmConfig.provider !== "codex-cli"
+          llmConfig.provider !== "codex-cli" &&
+          llmConfig.provider !== "gemini-cli"
 
         if (useBackendAgent) {
           setAgentEvents([
@@ -1122,7 +1123,7 @@ export function ChatPanel() {
         }
 
         const contextText = [
-          "You have access to the current LLM Wiki project context below. Use it as retrieved evidence when it is relevant.",
+          "You have access to the current LLM-CO-WIKI project context below. Use it as retrieved evidence when it is relevant.",
           "",
           backendResponseText(backendResponse),
           "",
@@ -1141,7 +1142,7 @@ export function ChatPanel() {
         const finalMessages: LlmChatMessage[] = [
           {
             role: "system",
-            content: "Answer using the provided LLM Wiki context and references. If the context is insufficient, say what is missing instead of inventing details.",
+            content: "Answer using the provided LLM-CO-WIKI context and references. If the context is insufficient, say what is missing instead of inventing details.",
           },
           ...(sendOptions.historyOverride ?? chatMessagesToLLM(priorMessages)),
           { role: "user", content: userContent },

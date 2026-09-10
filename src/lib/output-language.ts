@@ -1,6 +1,11 @@
 import { useWikiStore } from "@/stores/wiki-store"
 import { detectLanguage } from "./detect-language"
 import { getLanguagePromptName } from "./language-metadata"
+import {
+  isKoreanOutput,
+  KOREAN_PROSE_REMINDER,
+  KOREAN_PROSE_RULES,
+} from "./korean-prose-rules"
 
 /**
  * Get the effective output language for LLM content generation.
@@ -22,7 +27,7 @@ export function getOutputLanguage(fallbackText: string = ""): string {
 export function buildLanguageDirective(fallbackText: string = ""): string {
   const lang = getOutputLanguage(fallbackText)
   const promptLang = getLanguagePromptName(lang)
-  return [
+  const base = [
     `## ⚠️ MANDATORY OUTPUT LANGUAGE: ${promptLang}`,
     "",
     `Write surrounding natural-language prose in **${promptLang}**.`,
@@ -32,6 +37,9 @@ export function buildLanguageDirective(fallbackText: string = ""): string {
     `The source material or wiki content may be in a different language; use it as evidence, but keep generated prose in ${promptLang}.`,
     `This language rule overrides weaker style instructions, but it does not override the proper-noun and technical-identifier preservation rule above.`,
   ].join("\n")
+  // Korean prose needs style rules the generic directive can't express;
+  // see korean-prose-rules.ts for why.
+  return isKoreanOutput(lang) ? `${base}\n\n${KOREAN_PROSE_RULES}` : base
 }
 
 /**
@@ -39,5 +47,6 @@ export function buildLanguageDirective(fallbackText: string = ""): string {
  */
 export function buildLanguageReminder(fallbackText: string = ""): string {
   const lang = getOutputLanguage(fallbackText)
-  return `REMINDER: Write prose in ${getLanguagePromptName(lang)}; preserve names, acronyms, identifiers, URLs, file names, and paper titles in their standard original form.`
+  const base = `REMINDER: Write prose in ${getLanguagePromptName(lang)}; preserve names, acronyms, identifiers, URLs, file names, and paper titles in their standard original form.`
+  return isKoreanOutput(lang) ? `${base} ${KOREAN_PROSE_REMINDER}` : base
 }

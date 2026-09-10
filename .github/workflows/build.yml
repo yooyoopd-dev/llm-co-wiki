@@ -11,30 +11,14 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-            rust_target: aarch64-apple-darwin
-          - platform: ubuntu-22.04
-            args: ''
-            rust_target: ''
-          # GitHub-hosted ARM Linux runner (free for public repos
-          # since 2024). Native build — no cross-compile of webkit2gtk.
-          - platform: ubuntu-22.04-arm
-            args: ''
-            rust_target: ''
-          - platform: windows-latest
-            args: ''
-            rust_target: ''
-
-    runs-on: ${{ matrix.platform }}
+    # Windows is the only shipped target. macOS/Linux rows were removed
+    # deliberately: nobody consumes those bundles and each one added ~20
+    # minutes of queue time to every tag push.
+    runs-on: windows-latest
     env:
       # GitHub-hosted runners occasionally hit crates.io HTTP/2 stream
       # resets while downloading large dependency graphs. Cargo retries plus
-      # HTTP/1.1 transport make release builds less flaky across the matrix.
+      # HTTP/1.1 transport make release builds less flaky.
       CARGO_HTTP_MULTIPLEXING: "false"
       CARGO_NET_RETRY: "5"
       CARGO_HTTP_TIMEOUT: "60"
@@ -45,52 +29,16 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_target }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - name: Install protoc (macOS)
-        if: startsWith(matrix.platform, 'macos-')
-        run: brew install protobuf
-
-      - name: Install dependencies (Ubuntu)
-        if: startsWith(matrix.platform, 'ubuntu-22.04')
-        run: |
-          sudo apt-get update
-          # xdg-utils provides /usr/bin/xdg-open, which Tauri's
-          # AppImage bundler embeds into the produced AppImage.
-          # Pre-installed on the x86_64 runner image but NOT on
-          # the ARM64 image — list it explicitly so both arches
-          # bundle cleanly regardless of future image drift.
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler xdg-utils
-
       # The repo ships pre-downloaded PDFium binaries under
-      # src-tauri/pdfium/ for every supported architecture
-      # (libpdfium.so = Linux x86_64, libpdfium-arm64.so = Linux aarch64,
-      # libpdfium.dylib = macOS arm64, pdfium.dll = Windows).
-      # For architectures whose bundled filename must
-      # stay `libpdfium.*`, swap the matching binary into place before cargo
-      # runs. We do NOT pull from bblanchon/pdfium-binaries during CI — that
-      # download has historically failed often enough that committing the
-      # binaries is the maintenance-friendly path.
-      - name: Verify PDFium binary checksums
-        if: matrix.platform != 'windows-latest'
-        run: shasum -a 256 -c src-tauri/pdfium/SHA256SUMS
-
-      # rust_target is empty for both Ubuntu rows, so platform is the
-      # only stable discriminator for the Linux ARM swap.
-      - name: Use ARM64 pdfium binary (Ubuntu ARM only)
-        if: matrix.platform == 'ubuntu-22.04-arm'
-        run: |
-          cp src-tauri/pdfium/libpdfium-arm64.so src-tauri/pdfium/libpdfium.so
-          file src-tauri/pdfium/libpdfium.so
-
-      - name: Install protoc (Windows)
-        if: matrix.platform == 'windows-latest'
+      # src-tauri/pdfium/ for every supported architecture; the Windows
+      # build picks up pdfium.dll as-is, so no swap step is needed here.
+      - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -112,12 +60,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           # Tag-triggered runs publish a real GitHub Release.
           # Manual (workflow_dispatch) runs leave tagName/releaseName
@@ -125,21 +67,19 @@ jobs:
           # just produces bundle artifacts — useful for testing a
           # branch build without polluting the Releases page.
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
-          releaseName: ${{ github.event_name == 'push' && format('LLM Wiki {0}', github.ref_name) || '' }}
+          releaseName: ${{ github.event_name == 'push' && format('LLM-CO-WIKI {0}', github.ref_name) || '' }}
           releaseBody: 'See the assets below for download links.'
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
 
       - name: Package Windows portable zip
-        if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
           .github/scripts/package-windows-portable.ps1 -Version $version
 
       - name: Attach Windows portable zip to release
-        if: github.event_name == 'push' && matrix.platform == 'windows-latest'
+        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
@@ -149,22 +89,16 @@ jobs:
       # On workflow_dispatch, no release is created, so the bundles
       # would otherwise be discarded with the runner. Upload them as
       # workflow artifacts so the maintainer can `gh run download`
-      # the .msi / .exe / .dmg / .deb to test locally. Skipped on
-      # tag pushes since the release page already has them.
+      # the .msi / .exe to test locally. Skipped on tag pushes since
+      # the release page already has them.
       - name: Upload bundles as workflow artifacts (manual runs only)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: bundle-${{ matrix.platform }}
-          # Glob covers both targeted (e.g.
-          # target/aarch64-apple-darwin/release/...) and default
-          # (target/release/...) build paths.
+          name: bundle-windows
           path: |
             src-tauri/target/**/release/bundle/msi/*.msi
             src-tauri/target/**/release/bundle/nsis/*.exe
-            src-tauri/target/**/release/bundle/dmg/*.dmg
-            src-tauri/target/**/release/bundle/deb/*.deb
-            src-tauri/target/**/release/bundle/appimage/*.AppImage
             dist-portable/*.zip
           if-no-files-found: warn
           retention-days: 14
@@ -202,3 +136,46 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.ref_name }}" dist-extension/*.zip --clobber
+
+  prune-old-release-assets:
+    name: Delete assets from older releases
+    # Runs only after every upload for THIS tag has landed, so a failed
+    # build never causes older downloads to be deleted while the new
+    # release has nothing to offer.
+    needs: [build, package-extension]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete assets attached to previous releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Refuse to delete anything unless this tag's own release actually
+          # has downloads on it. `needs:` already orders this job last, but
+          # the check is cheap and the operation is irreversible.
+          current_assets=$(gh api "repos/${GH_REPO}/releases/tags/${CURRENT_TAG}" \
+            --jq '.assets | length')
+          echo "Release ${CURRENT_TAG} has ${current_assets} asset(s)."
+          if [ "${current_assets}" -eq 0 ]; then
+            echo "::error::Refusing to prune older releases while ${CURRENT_TAG} has no assets."
+            exit 1
+          fi
+
+          # Releases themselves (and their notes/tags) are kept — only the
+          # binary assets of older releases are removed, so the Releases
+          # page stays a readable history while storage holds one build.
+          gh api --paginate "repos/${GH_REPO}/releases" \
+            --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\") | .assets[] | [.id, .name] | @tsv" \
+            > assets.tsv
+          if [ ! -s assets.tsv ]; then
+            echo "No assets on older releases; nothing to prune."
+            exit 0
+          fi
+          while IFS=$'\t' read -r id name; do
+            echo "Deleting asset ${name} (${id})"
+            gh api -X DELETE "repos/${GH_REPO}/releases/assets/${id}"
+          done < assets.tsv

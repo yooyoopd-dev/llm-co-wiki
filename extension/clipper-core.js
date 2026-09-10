@@ -1,7 +1,7 @@
 (function initializeClipperCore(global) {
   const DEFAULT_API_URLS = ["http://127.0.0.1:19827", "http://localhost:19827"];
   const MAX_EXTRACTED_CONTENT_CHARS = 1_000_000;
-  const TRUNCATION_NOTICE = "\n\n[LLM Wiki Clipper: page content truncated at 1,000,000 characters.]";
+  const TRUNCATION_NOTICE = "\n\n[LLM-CO-WIKI Clipper: page content truncated at 1,000,000 characters.]";
 
   function limitExtractedContent(content) {
     const value = String(content || "");
@@ -71,7 +71,7 @@
         lastError = error;
       }
     }
-    throw lastError || new Error("Unable to connect to LLM Wiki");
+    throw lastError || new Error("Unable to connect to LLM-CO-WIKI");
   }
 
   // This function is serialized into the active tab by chrome.scripting, so it

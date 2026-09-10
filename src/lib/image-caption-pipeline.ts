@@ -338,9 +338,9 @@ export async function captionMarkdownImages(
     }
   }
 
-  if (llmConfig.provider === "codex-cli") {
+  if (llmConfig.provider === "codex-cli" || llmConfig.provider === "gemini-cli") {
     console.warn(
-      "[caption-pipeline] skipped image captioning: Codex CLI transport does not support image input yet.",
+      `[caption-pipeline] skipped image captioning: ${llmConfig.provider} transport does not support image input yet.`,
     )
     return {
       enrichedMarkdown: markdown,

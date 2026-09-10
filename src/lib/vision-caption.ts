@@ -173,6 +173,9 @@ export async function captionImage(
   if (llmConfig.provider === "codex-cli") {
     throw new Error("Codex CLI transport does not support image input for captioning yet.")
   }
+  if (llmConfig.provider === "gemini-cli") {
+    throw new Error("Gemini CLI transport does not support image input for captioning yet.")
+  }
 
   // Pick the context-aware prompt iff EITHER side has non-trivial
   // content. Whitespace-only context is treated as "no context" so a

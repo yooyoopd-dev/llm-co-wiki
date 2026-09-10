@@ -129,3 +129,40 @@ describe("buildLanguageReminder", () => {
     expect(buildLanguageReminder()).toContain("Persian (Farsi / فارسی)")
   })
 })
+
+describe("Korean prose rules", () => {
+  it("appends the Korean style rules when the output language is Korean", () => {
+    useWikiStore.getState().setOutputLanguage("Korean")
+    const directive = buildLanguageDirective()
+    expect(directive).toContain("MANDATORY OUTPUT LANGUAGE: Korean")
+    expect(directive).toContain("## 한국어 문체 규칙 (필수)")
+    expect(directive).toContain("이중 피동")
+    expect(directive).toContain("결론적으로")
+  })
+
+  it("appends them in auto mode too, when the source text is Korean", () => {
+    useWikiStore.getState().setOutputLanguage("auto")
+    const directive = buildLanguageDirective("어텐션 메커니즘은 무엇인가")
+    expect(directive).toContain("## 한국어 문체 규칙 (필수)")
+  })
+
+  it("leaves other languages untouched", () => {
+    for (const language of ["English", "Japanese", "Chinese"]) {
+      useWikiStore.getState().setOutputLanguage(language as "English")
+      expect(buildLanguageDirective()).not.toContain("한국어 문체 규칙")
+      expect(buildLanguageReminder()).not.toContain("한국어 문체 규칙")
+    }
+  })
+
+  it("adds a one-line Korean reminder that stays a single line", () => {
+    useWikiStore.getState().setOutputLanguage("Korean")
+    const reminder = buildLanguageReminder()
+    expect(reminder).toContain("한국어 문체 규칙 준수")
+    expect(reminder.split("\n").length).toBe(1)
+  })
+
+  it("keeps technical identifiers explicitly out of scope", () => {
+    useWikiStore.getState().setOutputLanguage("Korean")
+    expect(buildLanguageDirective()).toContain("고유명사")
+  })
+})

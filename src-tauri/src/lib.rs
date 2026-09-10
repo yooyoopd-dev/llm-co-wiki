@@ -323,7 +323,7 @@ fn mcp_server_entry_path(app: tauri::AppHandle) -> Result<String, String> {
             }
         }
 
-        Err("MCP server entry was not found. Run `npm run mcp:build` from the LLM Wiki repository, then reopen Settings.".to_string())
+        Err("MCP server entry was not found. Run `npm run mcp:build` from the LLM-CO-WIKI repository, then reopen Settings.".to_string())
     })
 }
 
@@ -595,6 +595,7 @@ pub fn run() {
             // drained on process exit or by claude_cli_kill.
             app.manage(commands::claude_cli::ClaudeCliState::default());
             app.manage(commands::codex_cli::CodexCliState::default());
+            app.manage(commands::gemini_cli::GeminiCliState::default());
             app.manage(commands::file_sync::FileSyncState::default());
             app.manage(agent::session::AgentSessionStore::default());
             app.manage(agent::cancel::AgentCancellationRegistry::default());
@@ -687,6 +688,9 @@ pub fn run() {
             commands::codex_cli::codex_cli_detect,
             commands::codex_cli::codex_cli_spawn,
             commands::codex_cli::codex_cli_kill,
+            commands::gemini_cli::gemini_cli_detect,
+            commands::gemini_cli::gemini_cli_spawn,
+            commands::gemini_cli::gemini_cli_kill,
             commands::extract_images::extract_pdf_images_cmd,
             commands::extract_images::extract_office_images_cmd,
             commands::extract_images::extract_and_save_pdf_images_cmd,
@@ -726,9 +730,9 @@ pub fn run() {
                             let confirmed = app
                                 .dialog()
                                 .message(
-                                    "Quit LLM Wiki? Choose Quit to exit. Choose Hide Window to keep background features running.",
+                                    "Quit LLM-CO-WIKI? Choose Quit to exit. Choose Hide Window to keep background features running.",
                                 )
-                                .title("LLM Wiki")
+                                .title("LLM-CO-WIKI")
                                 .buttons(MessageDialogButtons::OkCancelCustom(
                                     "Quit".to_string(),
                                     "Hide Window".to_string(),
