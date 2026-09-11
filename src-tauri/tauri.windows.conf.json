@@ -3,6 +3,11 @@
     "windows": [
       {
         "label": "main",
+        "title": "LLM-CO-WIKI",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
         "hiddenTitle": false,
         "titleBarStyle": "Visible"
       }
