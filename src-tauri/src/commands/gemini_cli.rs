@@ -40,9 +40,22 @@ pub struct DetectResult {
     version: Option<String>,
     path: Option<String>,
     error: Option<String>,
+    /// Step-by-step account of what detection actually did, short enough to be
+    /// read off a screen and typed into a ticket by hand. Machines that run
+    /// this CLI are often on an isolated network where no file can leave, so
+    /// the report — not a log file — is the only thing that travels.
+    report: String,
 }
 
 const GEMINI_SPAWN_TIMEOUT_MINUTES: u64 = 10;
+/// `gemini --version` boots Node, reads the CLI's own settings and — on a
+/// managed corporate machine — can wait on antivirus or a network check before
+/// printing a line. Three seconds was not a real budget for that; the probe
+/// reported "not installed" for a CLI that works fine in a terminal.
+const GEMINI_DETECT_TIMEOUT_SECS: u64 = 30;
+/// Diagnostics are meant to be copied by hand off a screen, so each captured
+/// stream is trimmed to one short line.
+const DETECT_SNIPPET_CHARS: usize = 120;
 const STDERR_LIMIT_BYTES: usize = 1024 * 1024;
 const STDOUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -73,74 +86,238 @@ fn suppress_windows_console(_cmd: &mut Command) {
     }
 }
 
+/// Collapse a captured stream into one short, typeable line.
+fn snippet(raw: &[u8]) -> String {
+    let text = String::from_utf8_lossy(raw);
+    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if joined.is_empty() {
+        return "(empty)".to_string();
+    }
+    let mut out: String = joined.chars().take(DETECT_SNIPPET_CHARS).collect();
+    if joined.chars().count() > DETECT_SNIPPET_CHARS {
+        out.push('…');
+    }
+    out
+}
+
+/// `gemini --version` prints update notices above the version itself, so the
+/// version is the last non-empty line rather than the first.
+fn version_from_stdout(stdout: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+/// Is this a Windows batch shim? npm installs the Windows entry point as
+/// `gemini.cmd`. Whether a batch file can be handed straight to
+/// `CreateProcessW` differs between toolchain versions, so a batch target gets
+/// a second attempt through `cmd.exe /C` when the direct spawn is refused.
+fn is_batch_shim(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
+}
+
+/// How to start the resolved CLI.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Launch {
+    /// Spawn the resolved path itself. The default — it is what already works
+    /// on macOS and Linux, and on Windows for a real `.exe`.
+    Direct,
+    /// Run it through `cmd.exe /C`, for a batch shim the OS refused to start.
+    CmdShim,
+}
+
+impl Launch {
+    fn label(self) -> &'static str {
+        match self {
+            Launch::Direct => "direct",
+            Launch::CmdShim => "cmd /C (batch shim)",
+        }
+    }
+}
+
+fn launcher(path: &Path, launch: Launch) -> Command {
+    match launch {
+        Launch::Direct => Command::new(path),
+        Launch::CmdShim => {
+            let mut cmd = Command::new("cmd");
+            cmd.arg("/C").arg(path);
+            cmd
+        }
+    }
+}
+
+struct ProbeOutcome {
+    launch: Launch,
+    result: Result<std::process::Output, std::io::Error>,
+    elapsed_ms: u128,
+}
+
+/// Run `--version` once with the given strategy.
+async fn probe_version(path: &Path, launch: Launch, path_env: Option<&str>) -> ProbeOutcome {
+    let mut cmd = launcher(path, launch);
+    suppress_windows_console(&mut cmd);
+    if let Some(path_env) = path_env {
+        cmd.env("PATH", path_env);
+    }
+    let started = std::time::Instant::now();
+    let result = match tokio::time::timeout(
+        Duration::from_secs(GEMINI_DETECT_TIMEOUT_SECS),
+        cmd.arg("--version").output(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("no exit within {GEMINI_DETECT_TIMEOUT_SECS}s"),
+        )),
+    };
+    ProbeOutcome {
+        launch,
+        result,
+        elapsed_ms: started.elapsed().as_millis(),
+    }
+}
+
 #[tauri::command]
 pub async fn gemini_cli_detect() -> Result<DetectResult, String> {
+    let mut lines: Vec<String> = vec!["[GEMINI DETECT]".to_string()];
+
     let path = match find_gemini_command().await {
         Ok(p) => p,
         Err(error) => {
+            lines.push(format!("1 resolve  FAIL  {error}"));
+            lines.push("  candidates: gemini.cmd, gemini.exe, gemini (on PATH)".to_string());
+            lines.push("=> NOT FOUND".to_string());
             return Ok(DetectResult {
                 installed: false,
                 version: None,
                 path: None,
                 error: Some(error),
+                report: lines.join("\n"),
             });
         }
     };
 
     let path_str = path.to_string_lossy().to_string();
-    let mut cmd = Command::new(&path);
-    suppress_windows_console(&mut cmd);
+    lines.push(format!("1 resolve  OK    {path_str}"));
+
     // `gemini` is a node shim; under a GUI launch the inherited PATH lacks
     // node, so hand it the login shell PATH or its shebang fails with
     // `env: node: No such file or directory`.
-    if let Some(path_env) = child_path_env().await {
-        cmd.env("PATH", path_env);
-    }
-    let output = tokio::time::timeout(Duration::from_secs(3), cmd.arg("--version").output()).await;
+    let path_env = child_path_env().await;
+    lines.push(format!(
+        "2 PATH     {}",
+        if path_env.is_some() {
+            "login shell PATH prepended"
+        } else {
+            "inherited"
+        }
+    ));
 
-    match output {
-        Ok(Ok(out)) if out.status.success() => {
-            // `gemini --version` has printed update notices above the version
-            // itself; the version is the last non-empty line.
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let version = stdout
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .next_back()
-                .map(str::to_string);
+    let mut outcome = probe_version(&path, Launch::Direct, path_env.as_deref()).await;
+    // A batch shim the OS refused to start gets one retry through cmd.exe.
+    if outcome.result.is_err() && is_batch_shim(&path) && outcome.launch == Launch::Direct {
+        let first = outcome;
+        lines.push(format!(
+            "3 launch   {} -> spawn FAIL after {}ms",
+            first.launch.label(),
+            first.elapsed_ms
+        ));
+        if let Err(e) = &first.result {
+            lines.push(format!("  detail   {e}"));
+        }
+        outcome = probe_version(&path, Launch::CmdShim, path_env.as_deref()).await;
+    }
+
+    let step = lines.len() + 1;
+    match outcome.result {
+        Ok(out) if out.status.success() => {
+            let version = version_from_stdout(&out.stdout);
+            lines.push(format!(
+                "{step} launch   {} -> exit 0 in {}ms",
+                outcome.launch.label(),
+                outcome.elapsed_ms
+            ));
+            lines.push(format!("  stdout   {}", snippet(&out.stdout)));
+            lines.push(format!("  stderr   {}", snippet(&out.stderr)));
+            lines.push(format!(
+                "=> INSTALLED {}",
+                version.as_deref().unwrap_or("(no version line)")
+            ));
             Ok(DetectResult {
                 installed: true,
                 version,
                 path: Some(path_str),
                 error: None,
+                report: lines.join("\n"),
             })
         }
-        Ok(Ok(out)) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Ok(out) => {
+            let code = out
+                .status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string());
+            let stderr = snippet(&out.stderr);
+            lines.push(format!(
+                "{step} launch   {} -> exit {code} in {}ms",
+                outcome.launch.label(),
+                outcome.elapsed_ms
+            ));
+            lines.push(format!("  stdout   {}", snippet(&out.stdout)));
+            lines.push(format!("  stderr   {stderr}"));
+            lines.push("=> FAILED (CLI ran and reported an error)".to_string());
             Ok(DetectResult {
                 installed: false,
                 version: None,
                 path: Some(path_str),
-                error: Some(if stderr.is_empty() {
-                    format!("`gemini --version` exited with {}", out.status)
-                } else {
-                    stderr
-                }),
+                error: Some(format!("`gemini --version` exited with {code}: {stderr}")),
+                report: lines.join("\n"),
             })
         }
-        Ok(Err(e)) => Ok(DetectResult {
-            installed: false,
-            version: None,
-            path: Some(path_str),
-            error: Some(format!("Failed to spawn `gemini`: {e}")),
-        }),
-        Err(_) => Ok(DetectResult {
-            installed: false,
-            version: None,
-            path: Some(path_str),
-            error: Some("`gemini --version` timed out after 3s".to_string()),
-        }),
+        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+            lines.push(format!(
+                "{step} launch   {} -> TIMEOUT after {}s",
+                outcome.launch.label(),
+                GEMINI_DETECT_TIMEOUT_SECS
+            ));
+            lines.push("  hint     time `gemini --version` in a terminal".to_string());
+            lines.push("=> FAILED (timed out)".to_string());
+            Ok(DetectResult {
+                installed: false,
+                version: None,
+                path: Some(path_str),
+                error: Some(format!(
+                    "`gemini --version` did not finish within {GEMINI_DETECT_TIMEOUT_SECS}s"
+                )),
+                report: lines.join("\n"),
+            })
+        }
+        Err(e) => {
+            let os_code = e
+                .raw_os_error()
+                .map(|c| format!(" (os error {c})"))
+                .unwrap_or_default();
+            lines.push(format!(
+                "{step} launch   {} -> spawn FAIL{os_code} after {}ms",
+                outcome.launch.label(),
+                outcome.elapsed_ms
+            ));
+            lines.push(format!("  detail   {e}"));
+            lines.push("=> FAILED (could not start the process)".to_string());
+            Ok(DetectResult {
+                installed: false,
+                version: None,
+                path: Some(path_str),
+                error: Some(format!("Failed to spawn `gemini`{os_code}: {e}")),
+                report: lines.join("\n"),
+            })
+        }
     }
 }
 
@@ -157,9 +334,11 @@ pub async fn gemini_cli_spawn(
         return Err("No prompt to send to gemini CLI".to_string());
     }
 
+    validate_model(&model)?;
     let working_directory = resolve_gemini_working_directory(working_directory).await?;
     let gemini = find_gemini_command().await?;
-    let mut cmd = Command::new(&gemini);
+    let mut launch = Launch::Direct;
+    let mut cmd = launcher(&gemini, launch);
     suppress_windows_console(&mut cmd);
     // See `gemini_cli_detect`: the node shim needs the login shell PATH at run
     // time so its shebang resolves `node` under a GUI launch.
@@ -174,9 +353,31 @@ pub async fn gemini_cli_spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn gemini: {e}"))?;
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        // Mirrors detection: a batch shim the OS refused to start directly is
+        // retried through cmd.exe. `model` is validated above so it cannot
+        // introduce a second command when cmd re-parses the line.
+        Err(first) if is_batch_shim(&gemini) && launch == Launch::Direct => {
+            launch = Launch::CmdShim;
+            let mut retry = launcher(&gemini, launch);
+            suppress_windows_console(&mut retry);
+            if let Some(path_env) = child_path_env().await {
+                retry.env("PATH", path_env);
+            }
+            retry.args(build_gemini_cli_args(&model));
+            retry.current_dir(&working_directory);
+            retry
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            retry.spawn().map_err(|e| {
+                format!("Failed to spawn gemini (direct: {first}; via cmd /C: {e})")
+            })?
+        }
+        Err(e) => return Err(format!("Failed to spawn gemini: {e}")),
+    };
 
     let mut stdin = child
         .stdin
@@ -306,6 +507,23 @@ pub async fn gemini_cli_spawn(
 ///
 /// The prompt deliberately does *not* go through `-p`: it is written to stdin,
 /// so a long prompt cannot hit the platform's argv length limit.
+/// On Windows a batch shim is launched through `cmd.exe`, which re-parses the
+/// command line — so a model id carrying `&`, `|` or `^` would become a second
+/// command. Model ids are vendor identifiers; restrict them to the characters
+/// those actually use rather than trying to quote for two parsers at once.
+fn validate_model(model: &str) -> Result<(), String> {
+    let model = model.trim();
+    if model
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':'))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "Gemini CLI model id may only contain letters, digits, '.', '_', '-' and ':': {model}"
+    ))
+}
+
 fn build_gemini_cli_args(model: &str) -> Vec<String> {
     let mut args = vec![
         "--skip-trust".to_string(),
@@ -387,6 +605,40 @@ mod tests {
         assert_eq!(out, "é水");
         assert_eq!(out.len(), 5);
         assert!(std::str::from_utf8(out.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn snippet_collapses_whitespace_and_marks_truncation() {
+        assert_eq!(snippet(b"  0.59.0 \n"), "0.59.0");
+        assert_eq!(snippet(b"   "), "(empty)");
+        assert_eq!(snippet(b""), "(empty)");
+        assert_eq!(snippet(b"line one\nline two"), "line one line two");
+        let long = "x".repeat(DETECT_SNIPPET_CHARS + 10);
+        let out = snippet(long.as_bytes());
+        assert!(out.ends_with('…'));
+        assert_eq!(out.chars().count(), DETECT_SNIPPET_CHARS + 1);
+    }
+
+    #[test]
+    fn version_is_the_last_non_empty_line_not_the_first() {
+        // An update notice above the version is the case that broke a naive
+        // "first line" read.
+        assert_eq!(
+            version_from_stdout(b"Update available 0.58.0 -> 0.59.0\n\n0.59.0\n").as_deref(),
+            Some("0.59.0")
+        );
+        assert_eq!(version_from_stdout(b"0.59.0").as_deref(), Some("0.59.0"));
+        assert_eq!(version_from_stdout(b"   \n\n"), None);
+    }
+
+    #[test]
+    fn validate_model_accepts_real_ids_and_rejects_shell_metacharacters() {
+        assert!(validate_model("gemini-2.5-pro").is_ok());
+        assert!(validate_model("models/gemini_1.5:latest").is_err());
+        assert!(validate_model("").is_ok());
+        for bad in ["a&calc", "a|b", "a^b", "a>b", "a b", "a\"b"] {
+            assert!(validate_model(bad).is_err(), "should reject {bad}");
+        }
     }
 
     #[test]

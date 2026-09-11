@@ -1069,6 +1069,51 @@ interface DetectResult {
   version: string | null
   path: string | null
   error: string | null
+  /** Step-by-step detection report. Only `gemini_cli_detect` returns one. */
+  report?: string
+}
+
+/**
+ * Renders a detection report as a selectable monospace block.
+ *
+ * Machines that run these CLIs are often on an isolated network where no file
+ * can be exported, so the report has to survive being read off a screen and
+ * typed by hand: fixed-width, one fact per line, no wrapping mid-token.
+ */
+function DetectReport({ report }: { report: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(report)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard can be unavailable (permissions, no secure context). The
+      // text is selectable either way, which is the path that matters here.
+    }
+  }
+
+  return (
+    <details className="mt-1">
+      <summary className="cursor-pointer text-[10px] text-muted-foreground">
+        {t("settings.sections.llm.cliReportToggle")}
+      </summary>
+      <pre className="mt-1 select-all overflow-x-auto whitespace-pre rounded bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-foreground">
+        {report}
+      </pre>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        className="mt-1 rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        {copied
+          ? t("settings.sections.llm.cliReportCopied")
+          : t("settings.sections.llm.cliReportCopy")}
+      </button>
+    </details>
+  )
 }
 
 /**
@@ -1275,11 +1320,15 @@ function GeminiCliStatusPill() {
       setResult(r)
       setState(r.installed ? "ok" : "err")
     } catch (e) {
+      // The command itself failed to run, so there is no report from the Rust
+      // side; synthesize one so the UI always has something to transcribe.
+      const message = e instanceof Error ? e.message : String(e)
       setResult({
         installed: false,
         version: null,
         path: null,
-        error: e instanceof Error ? e.message : String(e),
+        error: message,
+        report: `[GEMINI DETECT]\n1 invoke   FAIL  ${message}\n=> FAILED (detect command did not run)`,
       })
       setState("err")
     }
@@ -1333,6 +1382,7 @@ function GeminiCliStatusPill() {
                 </code>{" "}
                 {" "}{t("settings.sections.llm.cliAuthAfter")}
               </div>
+              {result?.report && <DetectReport report={result.report} />}
             </>
           )}
           {state === "err" && (
@@ -1345,6 +1395,16 @@ function GeminiCliStatusPill() {
                 </code>{" "}
                 {" "}{t("settings.sections.llm.cliInstallAfter")}
               </div>
+              {result?.report && (
+                <>
+                  <pre className="mt-1 select-all overflow-x-auto whitespace-pre rounded bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-foreground">
+                    {result.report}
+                  </pre>
+                  <div className="text-muted-foreground">
+                    {t("settings.sections.llm.cliReportHint")}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
