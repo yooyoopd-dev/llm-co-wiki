@@ -1,5 +1,6 @@
 pub mod claude_cli;
 mod cli_resolver;
+pub mod cherrytree;
 pub mod codex_cli;
 pub mod gemini_cli;
 pub mod ebook;
