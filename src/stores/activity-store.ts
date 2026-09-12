@@ -5,6 +5,11 @@ export interface ActivityItem {
   type: "ingest" | "lint" | "query"
   title: string
   status: "running" | "done" | "error"
+  /** Which kind of work the current `detail` describes. `local` is parsing
+   *  that runs on this machine (pdfium, OpenDataLoader, a self-hosted MinerU,
+   *  image extraction); `llm` is anything that calls a model. The panel shows
+   *  it as a badge so a long-running ingest is legible at a glance. */
+  phase?: "local" | "llm"
   detail: string
   filesWritten: string[]
   createdAt: number
@@ -13,7 +18,7 @@ export interface ActivityItem {
 interface ActivityState {
   items: ActivityItem[]
   addItem: (item: Omit<ActivityItem, "id" | "createdAt">) => string
-  updateItem: (id: string, updates: Partial<Pick<ActivityItem, "status" | "detail" | "filesWritten">>) => void
+  updateItem: (id: string, updates: Partial<Pick<ActivityItem, "status" | "phase" | "detail" | "filesWritten">>) => void
   appendDetail: (id: string, text: string) => void
   clearDone: () => void
 }

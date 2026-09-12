@@ -954,10 +954,21 @@ export async function testMineruConnection(
   const httpFetch = await getHttpFetch()
 
   if (config?.backend === "local") {
-    const res = await httpFetch(
-      `${localMineruApiBase(config.localEndpoint)}/health`,
-      localMineruRequestInit(config.localToken),
-    )
+    const base = localMineruApiBase(config.localEndpoint)
+    let res: Response
+    try {
+      res = await httpFetch(`${base}/health`, localMineruRequestInit(config.localToken))
+    } catch (err) {
+      // A transport-level failure here means nothing is listening, not that
+      // the service is misconfigured. The raw reqwest text ("error sending
+      // request for url …") gives the user nothing to act on, so name the
+      // command that starts the service instead.
+      const detail = err instanceof Error ? err.message : String(err)
+      throw new Error(
+        `Could not reach a MinerU service at ${base}. Start it with \`mineru-api --host 127.0.0.1 --port 8000\` ` +
+          `(install: pip install "mineru[core]"), then test again. (${detail})`,
+      )
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "")
       throw new Error(`Local MinerU service unavailable: HTTP ${res.status}: ${text}`)
