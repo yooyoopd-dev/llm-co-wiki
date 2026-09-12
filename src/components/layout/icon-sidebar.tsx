@@ -7,7 +7,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
 import { useTranslation } from "react-i18next"
-import logoImg from "@/assets/logo.jpg"
+import logoImg from "@/assets/logo.png"
 import type { WikiState } from "@/stores/wiki-store"
 
 type NavView = WikiState["activeView"]
