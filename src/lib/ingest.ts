@@ -744,7 +744,10 @@ async function autoIngestImpl(
       const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
       const cachePath = `${cacheDir}/.cache/${fileName}.txt`
       activity.updateItem(activityId, { detail: "OpenDataLoader: parsing PDF..." })
-      const markdown = await parsePdfWithOpenDataLoader(sp)
+      const markdown = await parsePdfWithOpenDataLoader(
+        sp,
+        useWikiStore.getState().opendataloaderPath,
+      )
       await createDirectory(`${cacheDir}/.cache`)
       await writeFile(cachePath, markdown)
       console.log(

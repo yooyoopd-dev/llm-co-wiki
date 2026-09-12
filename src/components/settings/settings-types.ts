@@ -84,6 +84,7 @@ export interface SettingsDraft {
 
   // MinerU PDF parsing
   pdfParser: PdfParser
+  opendataloaderPath: string
   mineruEnabled: boolean
   mineruBackend: "cloud" | "local"
   mineruLocalEndpoint: string

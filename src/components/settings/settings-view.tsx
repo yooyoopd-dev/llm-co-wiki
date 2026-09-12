@@ -96,6 +96,7 @@ function initialDraft(
   sourceWatch: ReturnType<typeof useWikiStore.getState>["sourceWatchConfig"],
   mineru: ReturnType<typeof useWikiStore.getState>["mineruConfig"],
   pdfParser: ReturnType<typeof useWikiStore.getState>["pdfParser"],
+  opendataloaderPath: string,
   apiConfig: ReturnType<typeof useWikiStore.getState>["apiConfig"],
   generalConfig: ReturnType<typeof useWikiStore.getState>["generalConfig"],
   maxHistoryMessages: number,
@@ -160,6 +161,7 @@ function initialDraft(
     scheduledImportInterval: scheduledImport.interval,
     sourceWatchConfig: normalizeSourceWatchConfig(sourceWatch),
     pdfParser,
+    opendataloaderPath,
     mineruEnabled: mineru.enabled,
     mineruBackend: mineru.backend || "cloud",
     mineruLocalEndpoint:
@@ -200,6 +202,8 @@ export function SettingsView() {
   const outputLanguage = useWikiStore((s) => s.outputLanguage)
   const pdfParser = useWikiStore((s) => s.pdfParser)
   const setPdfParser = useWikiStore((s) => s.setPdfParser)
+  const opendataloaderPath = useWikiStore((s) => s.opendataloaderPath)
+  const setOpendataloaderPath = useWikiStore((s) => s.setOpendataloaderPath)
   const setOutputLanguage = useWikiStore((s) => s.setOutputLanguage)
   const proxyConfig = useWikiStore((s) => s.proxyConfig)
   const setProxyConfig = useWikiStore((s) => s.setProxyConfig)
@@ -240,6 +244,7 @@ export function SettingsView() {
       sourceWatchConfig,
       mineruConfig,
       pdfParser,
+      opendataloaderPath,
       apiConfig,
       generalConfig,
       maxHistoryMessages,
@@ -300,6 +305,7 @@ export function SettingsView() {
         sourceWatchConfig,
         mineruConfig,
         pdfParser,
+        opendataloaderPath,
         apiConfig,
         generalConfig,
         maxHistoryMessages,
@@ -319,6 +325,7 @@ export function SettingsView() {
     sourceWatchConfig,
     mineruConfig,
     pdfParser,
+    opendataloaderPath,
     apiConfig,
     generalConfig,
     maxHistoryMessages,
@@ -354,6 +361,8 @@ export function SettingsView() {
       loadMineruConfig,
       savePdfParser,
       loadPdfParser,
+      saveOpendataloaderPath,
+      loadOpendataloaderPath,
       saveApiConfig,
       loadApiConfig,
       saveGeneralConfig,
@@ -464,6 +473,7 @@ export function SettingsView() {
     setMaxHistoryMessages(draft.maxHistoryMessages)
     setMineruConfig(newMineruConfig)
     setPdfParser(draft.pdfParser)
+    setOpendataloaderPath(draft.opendataloaderPath)
     setApiConfig(newApiConfig)
     setGeneralConfig(newGeneralConfig)
 
@@ -473,6 +483,7 @@ export function SettingsView() {
       await saveMultimodalConfig(newMultimodal)
       await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
       await savePdfParser(draft.pdfParser)
+      await saveOpendataloaderPath(draft.opendataloaderPath)
       await saveProxyConfig(newProxy)
       await saveSourceWatchConfig(newSourceWatch, project?.id)
       if (project) {
@@ -567,6 +578,7 @@ export function SettingsView() {
           persistedScheduledImport,
           persistedMineru,
           persistedPdfParser,
+          persistedOpendataloaderPath,
           persistedApi,
           persistedGeneral,
           persistedZoom,
@@ -580,6 +592,7 @@ export function SettingsView() {
           project ? loadScheduledImportConfig(project.path) : Promise.resolve(null),
           loadMineruConfig(),
           loadPdfParser(),
+          loadOpendataloaderPath(),
           loadApiConfig(),
           loadGeneralConfig(),
           loadZoomLevel(),
@@ -594,6 +607,7 @@ export function SettingsView() {
         setMaxHistoryMessages(maxHistoryMessages)
         setMineruConfig(resultValue(persistedMineru, null) ?? mineruConfig)
         setPdfParser(resultValue(persistedPdfParser, pdfParser))
+        setOpendataloaderPath(resultValue(persistedOpendataloaderPath, opendataloaderPath))
         setApiConfig(resultValue(persistedApi, null) ?? apiConfig)
         setGeneralConfig(resultValue(persistedGeneral, generalConfig))
         useZoomStore.getState().setLevel(resultValue(persistedZoom, useZoomStore.getState().level))
@@ -625,6 +639,7 @@ export function SettingsView() {
     setSourceWatchConfig,
     setMineruConfig,
     setPdfParser,
+    setOpendataloaderPath,
     setApiConfig,
     setGeneralConfig,
     setMaxHistoryMessages,

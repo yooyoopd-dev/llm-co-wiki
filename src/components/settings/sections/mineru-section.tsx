@@ -73,7 +73,26 @@ export function MineruSection({ draft, setDraft }: Props) {
                   "Built-in pdfium text extraction. Fast, no external dependency, but layout and tables are flattened to plain text.",
               })}
         </p>
-        {draft.pdfParser === "opendataloader" && <OpenDataLoaderStatus />}
+        {draft.pdfParser === "opendataloader" && (
+          <div className="space-y-1.5">
+            <Label>
+              {t("settings.sections.pdfParser.cliPath", { defaultValue: "CLI path (optional)" })}
+            </Label>
+            <Input
+              value={draft.opendataloaderPath}
+              onChange={(e) => setDraft("opendataloaderPath", e.target.value)}
+              placeholder="D:\\Tools\\Parser\\opendataloader-pdf-cli"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("settings.sections.pdfParser.cliPathHint", {
+                defaultValue:
+                  "Point at the downloaded opendataloader-pdf-cli-<version>.jar, or the folder holding it — the jar runs through java. Leave empty to use an `opendataloader-pdf` command on PATH (npm install).",
+              })}
+            </p>
+            <OpenDataLoaderStatus cliPath={draft.opendataloaderPath} />
+          </div>
+        )}
       </div>
 
       <div>
@@ -362,7 +381,7 @@ export function MineruSection({ draft, setDraft }: Props) {
  * hand-transcribable block the Gemini CLI pill shows, for the same reason:
  * the machines that run this are often on isolated networks.
  */
-function OpenDataLoaderStatus() {
+function OpenDataLoaderStatus({ cliPath }: { cliPath: string }) {
   const { t } = useTranslation()
   const [state, setState] = useState<"idle" | "running" | "ok" | "err">("idle")
   const [result, setResult] = useState<{ version: string | null; report: string } | null>(null)
@@ -373,6 +392,7 @@ function OpenDataLoaderStatus() {
       const { invoke } = await import("@tauri-apps/api/core")
       const r = await invoke<{ installed: boolean; version: string | null; report: string }>(
         "opendataloader_detect",
+        { cliPath: cliPath.trim() || null },
       )
       setResult({ version: r.version, report: r.report })
       setState(r.installed ? "ok" : "err")

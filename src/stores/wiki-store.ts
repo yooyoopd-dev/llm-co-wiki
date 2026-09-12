@@ -456,6 +456,12 @@ interface WikiState {
   sourceWatchConfig: SourceWatchConfig
   mineruConfig: MineruConfig
   pdfParser: PdfParser
+  /**
+   * Where the OpenDataLoader CLI lives. Empty means "look for the npm shim on
+   * PATH"; otherwise a jar, a directory holding one (the release zip's shape),
+   * or an executable.
+   */
+  opendataloaderPath: string
   apiConfig: ApiConfig
   generalConfig: GeneralConfig
   graphUiState: GraphUiState
@@ -488,6 +494,7 @@ interface WikiState {
   setSourceWatchConfig: (config: SourceWatchConfig) => void
   setMineruConfig: (config: MineruConfig) => void
   setPdfParser: (parser: PdfParser) => void
+  setOpendataloaderPath: (path: string) => void
   setApiConfig: (config: ApiConfig) => void
   setGeneralConfig: (config: GeneralConfig) => void
   setGraphUiState: (state: GraphUiState | ((current: GraphUiState) => GraphUiState)) => void
@@ -664,6 +671,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
 
   pdfParser: "preload",
+  opendataloaderPath: "",
 
   // Default `enabled: true` preserves the pre-toggle behavior: anyone
   // who already had `LLM_WIKI_API_TOKEN` set or `apiConfig.token`
@@ -701,6 +709,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   setSourceWatchConfig: (sourceWatchConfig) => set({ sourceWatchConfig }),
   setMineruConfig: (mineruConfig) => set({ mineruConfig }),
   setPdfParser: (pdfParser) => set({ pdfParser }),
+  setOpendataloaderPath: (opendataloaderPath) => set({ opendataloaderPath }),
   setApiConfig: (apiConfig) => set({ apiConfig }),
   setGeneralConfig: (generalConfig) => set({ generalConfig }),
   setGraphUiState: (graphUiState) =>

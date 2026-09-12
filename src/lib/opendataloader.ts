@@ -8,8 +8,16 @@ import { invoke } from "@tauri-apps/api/core"
  * and the CLI writes files rather than printing to stdout. This wrapper only
  * exists so callers do not repeat the command name.
  */
-export async function parsePdfWithOpenDataLoader(pdfPath: string): Promise<string> {
-  return invoke<string>("opendataloader_parse_pdf", { path: pdfPath })
+export async function parsePdfWithOpenDataLoader(
+  pdfPath: string,
+  cliPath?: string,
+): Promise<string> {
+  return invoke<string>("opendataloader_parse_pdf", {
+    path: pdfPath,
+    // An empty setting means "look on PATH"; the Rust side treats null and
+    // blank identically, but sending null keeps that explicit.
+    cliPath: cliPath?.trim() || null,
+  })
 }
 
 export interface OpenDataLoaderDetectResult {
@@ -21,6 +29,8 @@ export interface OpenDataLoaderDetectResult {
   report: string
 }
 
-export async function detectOpenDataLoader(): Promise<OpenDataLoaderDetectResult> {
-  return invoke<OpenDataLoaderDetectResult>("opendataloader_detect")
+export async function detectOpenDataLoader(cliPath?: string): Promise<OpenDataLoaderDetectResult> {
+  return invoke<OpenDataLoaderDetectResult>("opendataloader_detect", {
+    cliPath: cliPath?.trim() || null,
+  })
 }
