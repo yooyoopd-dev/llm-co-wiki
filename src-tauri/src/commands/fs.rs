@@ -29,6 +29,10 @@ const MEDIA_EXTS: &[&str] = &[
     "m4a", "wma",
 ];
 const EBOOK_EXTS: &[&str] = &["epub", "mobi"];
+/// CherryTree note archives. Only `.ctb` (SQLite) is readable: `.ctd`/`.ctz`
+/// are XML rather than SQLite, and `.ctx` is encrypted with the user's
+/// password. See `commands::cherrytree`.
+const NOTE_ARCHIVE_EXTS: &[&str] = &["ctb"];
 const LEGACY_DOC_EXTS: &[&str] = &["pages", "numbers", "key"];
 const OFFICE_CACHE_FORMAT: &str = "anydoc-0.1.6-v1";
 
@@ -92,6 +96,9 @@ pub async fn read_file(path: String, extract_images: Option<bool>) -> Result<Str
             match ext.as_str() {
                 "pdf" => extract_pdf_text(&path, include_images),
                 "org" => extract_org_text(&path),
+                e if NOTE_ARCHIVE_EXTS.contains(&e) => {
+                    crate::commands::cherrytree::extract_ctb_text(&path)
+                }
                 e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e),
                 e if EBOOK_EXTS.contains(&e) => crate::commands::ebook::extract_ebook_text(&path, e),
                 e if IMAGE_EXTS.contains(&e) => {
@@ -145,6 +152,9 @@ pub async fn preprocess_file(path: String) -> Result<String, String> {
             let text = match ext.as_str() {
                 "pdf" => extract_pdf_text(&path, false)?,
                 "org" => extract_org_text(&path)?,
+                e if NOTE_ARCHIVE_EXTS.contains(&e) => {
+                    crate::commands::cherrytree::extract_ctb_text(&path)?
+                }
                 e if OFFICE_EXTS.contains(&e) => extract_office_text(&path, e)?,
                 e if EBOOK_EXTS.contains(&e) => {
                     crate::commands::ebook::extract_ebook_text(&path, e)?

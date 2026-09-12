@@ -38,6 +38,63 @@ export function MineruSection({ draft, setDraft }: Props) {
 
   return (
     <div className="space-y-6">
+      <div className="space-y-2 rounded-md border p-3">
+        <h2 className="text-xl font-semibold">
+          {t("settings.sections.pdfParser.title", { defaultValue: "PDF Parser" })}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {t("settings.sections.pdfParser.description", {
+            defaultValue:
+              "Which engine turns a PDF into text. MinerU below, when enabled, still takes precedence over this choice.",
+          })}
+        </p>
+        <select
+          value={draft.pdfParser}
+          onChange={(e) => setDraft("pdfParser", e.target.value as SettingsDraft["pdfParser"])}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        >
+          <option value="preload">
+            {t("settings.sections.pdfParser.preload", { defaultValue: "preload — built-in (pdfium)" })}
+          </option>
+          <option value="opendataloader">
+            {t("settings.sections.pdfParser.opendataloader", {
+              defaultValue: "opendataloader — layout-aware Markdown",
+            })}
+          </option>
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {draft.pdfParser === "opendataloader"
+            ? t("settings.sections.pdfParser.opendataloaderHint", {
+                defaultValue:
+                  "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires `npm i -g @opendataloader/pdf` and a JRE 11+ on PATH. Nothing is uploaded.",
+              })
+            : t("settings.sections.pdfParser.preloadHint", {
+                defaultValue:
+                  "Built-in pdfium text extraction. Fast, no external dependency, but layout and tables are flattened to plain text.",
+              })}
+        </p>
+        {draft.pdfParser === "opendataloader" && (
+          <div className="space-y-1.5">
+            <Label>
+              {t("settings.sections.pdfParser.cliPath", { defaultValue: "CLI path (optional)" })}
+            </Label>
+            <Input
+              value={draft.opendataloaderPath}
+              onChange={(e) => setDraft("opendataloaderPath", e.target.value)}
+              placeholder="D:\\Tools\\Parser\\opendataloader-pdf-cli"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("settings.sections.pdfParser.cliPathHint", {
+                defaultValue:
+                  "Point at the downloaded opendataloader-pdf-cli-<version>.jar, or the folder holding it — the jar runs through java. Leave empty to use an `opendataloader-pdf` command on PATH (npm install).",
+              })}
+            </p>
+            <OpenDataLoaderStatus cliPath={draft.opendataloaderPath} />
+          </div>
+        )}
+      </div>
+
       <div>
         <h2 className="text-xl font-semibold">
           {t("settings.sections.mineru.title", { defaultValue: "MinerU PDF Parser" })}
@@ -309,6 +366,67 @@ export function MineruSection({ draft, setDraft }: Props) {
             )}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Detection pill for the OpenDataLoader CLI.
+ *
+ * Selecting the parser is not the same as having it installed — it is an
+ * external tool plus a JRE. Showing the result of a real probe here, rather
+ * than at the first failed ingest, is the difference between a five-second
+ * fix and a confusing error on a document. The report is the same
+ * hand-transcribable block the Gemini CLI pill shows, for the same reason:
+ * the machines that run this are often on isolated networks.
+ */
+function OpenDataLoaderStatus({ cliPath }: { cliPath: string }) {
+  const { t } = useTranslation()
+  const [state, setState] = useState<"idle" | "running" | "ok" | "err">("idle")
+  const [result, setResult] = useState<{ version: string | null; report: string } | null>(null)
+
+  async function detect() {
+    setState("running")
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const r = await invoke<{ installed: boolean; version: string | null; report: string }>(
+        "opendataloader_detect",
+        { cliPath: cliPath.trim() || null },
+      )
+      setResult({ version: r.version, report: r.report })
+      setState(r.installed ? "ok" : "err")
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setResult({
+        version: null,
+        report: `[OPENDATALOADER DETECT]\n1 invoke   FAIL  ${message}\n=> FAILED (detect command did not run)`,
+      })
+      setState("err")
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Button type="button" variant="outline" size="sm" onClick={() => void detect()} disabled={state === "running"}>
+        {state === "running"
+          ? t("settings.sections.pdfParser.checking", { defaultValue: "Checking…" })
+          : t("settings.sections.pdfParser.check", { defaultValue: "Check installation" })}
+      </Button>
+      {result && (
+        <>
+          {state === "ok" && (
+            <div className="text-xs text-emerald-700 dark:text-emerald-400">
+              {t("settings.sections.pdfParser.detected", {
+                defaultValue: "Detected{{version}}.",
+                version: result.version ? ` ${result.version}` : "",
+              })}
+            </div>
+          )}
+          <pre className="select-all overflow-x-auto whitespace-pre rounded bg-background/60 p-2 font-mono text-[10px] leading-relaxed">
+            {result.report}
+          </pre>
+        </>
       )}
     </div>
   )

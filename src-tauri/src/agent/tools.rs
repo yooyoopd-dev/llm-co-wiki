@@ -2470,6 +2470,7 @@ pub fn search_sources(
                 | "rtf"
                 | "epub"
                 | "mobi"
+                | "ctb"
         ) {
             let Some(content) = crate::commands::fs::read_preprocessed_cache(entry.path()) else {
                 continue;

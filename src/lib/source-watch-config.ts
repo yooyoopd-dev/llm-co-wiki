@@ -7,7 +7,7 @@ export const DEFAULT_SOURCE_WATCH_CONFIG: SourceWatchConfig = sourceWatchDefault
 export const SOURCE_WATCH_FILE_TYPE_GROUPS = [
   {
     id: "documents",
-    extensions: ["md", "mdx", "txt", "org", "pdf", "doc", "docx", "docm", "odt", "rtf", "epub", "mobi"],
+    extensions: ["md", "mdx", "txt", "org", "pdf", "doc", "docx", "docm", "odt", "rtf", "epub", "mobi", "ctb"],
   },
   {
     id: "presentations",

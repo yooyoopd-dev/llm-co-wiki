@@ -982,6 +982,19 @@
         "autoCheck": "Check for updates automatically on startup (at most once every 6 hours)",
         "appDescription": "An LLM-driven personal knowledge base. Source:"
       },
+      "pdfParser": {
+        "title": "PDF Parser",
+        "description": "Which engine turns a PDF into text. MinerU below, when enabled, still takes precedence over this choice.",
+        "preload": "preload — built-in (pdfium)",
+        "opendataloader": "opendataloader — layout-aware Markdown",
+        "preloadHint": "Built-in pdfium text extraction. Fast, no external dependency, but layout and tables are flattened to plain text.",
+        "opendataloaderHint": "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires `npm i -g @opendataloader/pdf` and a JRE 11+ on PATH. Nothing is uploaded.",
+        "cliPath": "CLI path (optional)",
+        "cliPathHint": "Point at the downloaded opendataloader-pdf-cli-<version>.jar, or the folder holding it — the jar runs through java. Leave empty to use an `opendataloader-pdf` command on PATH (npm install).",
+        "check": "Check installation",
+        "checking": "Checking…",
+        "detected": "Detected{{version}}."
+      },
       "mineru": {
         "title": "MinerU PDF Parser",
         "description": "Use MinerU cloud or a self-hosted local service for higher quality PDF parsing (tables, formulas, complex layouts). Default uses built-in pdfium extraction.",

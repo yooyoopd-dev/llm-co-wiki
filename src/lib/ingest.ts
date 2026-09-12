@@ -13,6 +13,7 @@ import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { parseWithMineruResult } from "@/lib/mineru"
+import { parsePdfWithOpenDataLoader } from "@/lib/opendataloader"
 import { useChatStore } from "@/stores/chat-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
@@ -729,6 +730,41 @@ async function autoIngestImpl(
     }
     if (mineruSucceeded && !signal?.aborted) {
       activity.updateItem(activityId, { detail: "Reading source..." })
+    }
+  }
+
+  // ── OpenDataLoader preprocessing for PDF files ──
+  // Same seam MinerU uses: write Markdown into the `.cache/<file>.txt` that
+  // the Rust `read_file` command reads back, so nothing downstream has to
+  // know which parser produced the text. Skipped when MinerU already
+  // succeeded — re-parsing the same PDF would only cost minutes and discard
+  // MinerU's images.
+  if (isPdf && !mineruSucceeded && useWikiStore.getState().pdfParser === "opendataloader") {
+    try {
+      const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
+      const cachePath = `${cacheDir}/.cache/${fileName}.txt`
+      activity.updateItem(activityId, { detail: "OpenDataLoader: parsing PDF..." })
+      const markdown = await parsePdfWithOpenDataLoader(
+        sp,
+        useWikiStore.getState().opendataloaderPath,
+      )
+      await createDirectory(`${cacheDir}/.cache`)
+      await writeFile(cachePath, markdown)
+      console.log(
+        `[ingest:opendataloader] cached output for "${fileName}" (${markdown.length} chars)`,
+      )
+    } catch (err) {
+      throwIfIngestAborted(signal, activityId)
+      // The built-in extractor still works, so a missing CLI or an
+      // unparseable document degrades to plain text rather than failing the
+      // ingest outright — the same contract MinerU has.
+      const msg = trimInlineStatus(err instanceof Error ? err.message : String(err))
+      console.warn(
+        `[ingest:opendataloader] parsing failed, falling back to built-in extraction: ${msg}`,
+      )
+      activity.updateItem(activityId, {
+        detail: `OpenDataLoader failed, falling back to built-in PDF extraction: ${msg}`,
+      })
     }
   }
 

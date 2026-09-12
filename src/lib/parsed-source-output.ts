@@ -24,6 +24,7 @@ const PARSED_MARKDOWN_EXTENSIONS = new Set([
   "epub",
   "mobi",
   "org",
+  "ctb",
 ])
 
 /**

@@ -75,6 +75,7 @@ export const INGESTABLE_SOURCE_EXTENSIONS = new Set([
   "epub",
   "mobi",
   "org",
+  "ctb",
 ])
 
 function flattenFiles(nodes: FileNode[]): FileNode[] {

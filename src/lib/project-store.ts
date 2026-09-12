@@ -1,6 +1,6 @@
 import { load } from "@tauri-apps/plugin-store"
 import type { WikiProject } from "@/types/wiki"
-import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, SearchApiConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig } from "@/stores/wiki-store"
+import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, SearchApiConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig, PdfParser } from "@/stores/wiki-store"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { normalizePath } from "@/lib/path-utils"
 import { DEFAULT_ZOOM_LEVEL, clampZoomLevel } from "@/stores/zoom-store"
@@ -408,6 +408,37 @@ const OUTPUT_LANGUAGE_KEY = "outputLanguage"
 const PROJECT_OUTPUT_LANGUAGE_KEY = "projectOutputLanguages"
 const PROJECT_FILE_SYNC_KEY = "projectFileSyncEnabled"
 const SOURCE_WATCH_CONFIG_KEY = "sourceWatchConfig"
+const PDF_PARSER_KEY = "pdfParser"
+const OPENDATALOADER_PATH_KEY = "opendataloaderPath"
+
+/** Anything unrecognized falls back to the built-in parser rather than to a
+ *  tool that may not be installed. */
+export function normalizePdfParser(value: unknown): PdfParser {
+  return value === "opendataloader" ? "opendataloader" : "preload"
+}
+
+export async function savePdfParser(parser: PdfParser): Promise<void> {
+  const store = await getStore()
+  await store.set(PDF_PARSER_KEY, normalizePdfParser(parser))
+  await store.save()
+}
+
+export async function loadPdfParser(): Promise<PdfParser> {
+  const store = await getStore()
+  return normalizePdfParser(await store.get(PDF_PARSER_KEY))
+}
+
+export async function saveOpendataloaderPath(path: string): Promise<void> {
+  const store = await getStore()
+  await store.set(OPENDATALOADER_PATH_KEY, path.trim())
+  await store.save()
+}
+
+export async function loadOpendataloaderPath(): Promise<string> {
+  const store = await getStore()
+  const value = await store.get<string>(OPENDATALOADER_PATH_KEY)
+  return typeof value === "string" ? value : ""
+}
 
 export async function saveOutputLanguage(lang: OutputLanguage, projectId?: string): Promise<void> {
   const store = await getStore()

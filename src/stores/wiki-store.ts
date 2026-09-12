@@ -261,6 +261,19 @@ export function createDefaultGraphUiState(): GraphUiState {
   }
 }
 
+/**
+ * Which engine turns a PDF into text.
+ *
+ * `preload` is the built-in pdfium extraction that has always run — fast,
+ * no external dependency, plain text. `opendataloader` shells out to the
+ * OpenDataLoader PDF CLI, which does layout analysis and emits Markdown with
+ * headings, tables and reading order preserved; it needs that CLI and a
+ * JRE 11+ installed on the machine.
+ *
+ * MinerU stays a separate opt-in and still takes precedence when enabled.
+ */
+export type PdfParser = "preload" | "opendataloader"
+
 export interface GeneralConfig {
   autostart: boolean
   closeBehavior: CloseBehavior
@@ -442,6 +455,13 @@ interface WikiState {
   scheduledImportConfig: ScheduledImportConfig
   sourceWatchConfig: SourceWatchConfig
   mineruConfig: MineruConfig
+  pdfParser: PdfParser
+  /**
+   * Where the OpenDataLoader CLI lives. Empty means "look for the npm shim on
+   * PATH"; otherwise a jar, a directory holding one (the release zip's shape),
+   * or an executable.
+   */
+  opendataloaderPath: string
   apiConfig: ApiConfig
   generalConfig: GeneralConfig
   graphUiState: GraphUiState
@@ -473,6 +493,8 @@ interface WikiState {
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
   setSourceWatchConfig: (config: SourceWatchConfig) => void
   setMineruConfig: (config: MineruConfig) => void
+  setPdfParser: (parser: PdfParser) => void
+  setOpendataloaderPath: (path: string) => void
   setApiConfig: (config: ApiConfig) => void
   setGeneralConfig: (config: GeneralConfig) => void
   setGraphUiState: (state: GraphUiState | ((current: GraphUiState) => GraphUiState)) => void
@@ -648,6 +670,9 @@ export const useWikiStore = create<WikiState>((set) => ({
     modelVersion: "vlm",
   },
 
+  pdfParser: "preload",
+  opendataloaderPath: "",
+
   // Default `enabled: true` preserves the pre-toggle behavior: anyone
   // who already had `LLM_WIKI_API_TOKEN` set or `apiConfig.token`
   // hand-edited keeps their working API. New users land in
@@ -683,6 +708,8 @@ export const useWikiStore = create<WikiState>((set) => ({
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
   setSourceWatchConfig: (sourceWatchConfig) => set({ sourceWatchConfig }),
   setMineruConfig: (mineruConfig) => set({ mineruConfig }),
+  setPdfParser: (pdfParser) => set({ pdfParser }),
+  setOpendataloaderPath: (opendataloaderPath) => set({ opendataloaderPath }),
   setApiConfig: (apiConfig) => set({ apiConfig }),
   setGeneralConfig: (generalConfig) => set({ generalConfig }),
   setGraphUiState: (graphUiState) =>

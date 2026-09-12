@@ -172,6 +172,7 @@ export const EXTRACTED_TEXT_PREVIEW_EXTENSIONS = new Set([
   "epub",
   "mobi",
   "org",
+  "ctb",
 ])
 
 export function getFileExtension(filePath: string): string {

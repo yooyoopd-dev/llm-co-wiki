@@ -179,6 +179,7 @@ export function SourcesView() {
             "doc", "docx", "docm", "xls", "xlsx", "xlsm", "xlsb",
             "ppt", "pps", "pot", "pptx", "pptm", "ppsx", "ppsm",
             "odt", "ods", "odp", "epub", "mobi", "pages", "numbers", "key",
+            "ctb",
           ],
         },
         {

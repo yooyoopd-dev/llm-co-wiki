@@ -1,5 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
-import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
+import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, ReasoningConfig, SourceWatchConfig, PdfParser } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -83,6 +83,8 @@ export interface SettingsDraft {
   sourceWatchConfig: SourceWatchConfig
 
   // MinerU PDF parsing
+  pdfParser: PdfParser
+  opendataloaderPath: string
   mineruEnabled: boolean
   mineruBackend: "cloud" | "local"
   mineruLocalEndpoint: string
