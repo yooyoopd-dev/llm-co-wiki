@@ -208,7 +208,7 @@ export function MineruSection({ draft, setDraft }: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t("settings.sections.mineru.localInfo", {
                     defaultValue:
-                      "Base URL of an official mineru-api or mineru-router service.",
+                      "Base URL of an official mineru-api or mineru-router service. The service is separate software and is not started by this app: install it with `pip install \"mineru[core]\"` and run `mineru-api --host 127.0.0.1 --port 8000`. A connection test calls GET /health on this URL.",
                   })}
                 </p>
               </div>

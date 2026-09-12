@@ -3,7 +3,7 @@ import {
   ChevronUp, ChevronDown, Loader2, CheckCircle2, AlertCircle,
   FileText, Users, Lightbulb, BookOpen, GitMerge, BarChart3, HelpCircle, Layout,
   RotateCcw, X, Clock, TrendingUp, Target, Pause, Play,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Cpu, Sparkles,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
@@ -587,6 +587,35 @@ function FileSyncRow({ task, onRetry, onIgnore }: { task: FileChangeTask; onRetr
   )
 }
 
+/**
+ * Local-vs-LLM marker on a running activity row.
+ *
+ * An ingest alternates between work that runs on this machine (parsers,
+ * image extraction, file writes) and work that calls a model. They can take
+ * comparable amounts of time, so without a marker a long local parse is
+ * indistinguishable from a long LLM call — and the two have very different
+ * implications for cost and for what a user should do about a stall.
+ */
+function PhaseBadge({ phase }: { phase: NonNullable<ActivityItem["phase"]> }) {
+  const { t } = useTranslation()
+  const isLocal = phase === "local"
+  const Icon = isLocal ? Cpu : Sparkles
+  return (
+    <span
+      className={`mt-px inline-flex shrink-0 items-center gap-1 rounded px-1 py-px text-[9px] font-medium uppercase tracking-wide ${
+        isLocal
+          ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+          : "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+      }`}
+    >
+      <Icon className="h-2.5 w-2.5" />
+      {isLocal
+        ? t("activity.phaseLocal", { defaultValue: "Local" })
+        : t("activity.phaseLlm", { defaultValue: "LLM" })}
+    </span>
+  )
+}
+
 function ActivityRow({ item, onCancel }: { item: ActivityItem; onCancel?: () => void }) {
   const { t } = useTranslation()
   const openPathInPreview = useWikiStore((s) => s.openPathInPreview)
@@ -611,7 +640,10 @@ function ActivityRow({ item, onCancel }: { item: ActivityItem; onCancel?: () => 
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-medium">{item.title}</div>
-          <div className="text-muted-foreground mt-0.5">{item.detail}</div>
+          <div className="text-muted-foreground mt-0.5 flex items-start gap-1.5">
+            {item.status === "running" && item.phase && <PhaseBadge phase={item.phase} />}
+            <span className="min-w-0 flex-1">{item.detail}</span>
+          </div>
         </div>
         {item.status === "running" && onCancel && (
           <button

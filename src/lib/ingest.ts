@@ -686,6 +686,7 @@ async function autoIngestImpl(
     type: "ingest",
     title: fileName,
     status: "running",
+    phase: "local",
     detail: "Reading source...",
     filesWritten: [],
   })
@@ -701,10 +702,10 @@ async function autoIngestImpl(
     try {
       const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
       const cachePath = `${cacheDir}/.cache/${fileName}.txt`
-      activity.updateItem(activityId, { detail: "MinerU: parsing PDF..." })
+      activity.updateItem(activityId, { phase: "local", detail: "MinerU: parsing PDF..." })
       console.log(`[ingest:mineru] submitting "${fileName}" to MinerU API`)
       const mineruResult = await parseWithMineruResult(mineruCfg, sp, undefined, (msg) => {
-        activity.updateItem(activityId, { detail: `MinerU: ${msg}` })
+        activity.updateItem(activityId, { phase: "local", detail: `MinerU: ${msg}` })
       }, signal, {
         projectPath: pp,
         sourceSummarySlug,
@@ -725,11 +726,12 @@ async function autoIngestImpl(
       const msg = trimInlineStatus(err instanceof Error ? err.message : String(err))
       console.warn(`[ingest:mineru] MinerU parsing failed, falling back to pdfium: ${msg}`)
       activity.updateItem(activityId, {
+        phase: "local",
         detail: `MinerU failed, falling back to built-in PDF extraction: ${msg}`,
       })
     }
     if (mineruSucceeded && !signal?.aborted) {
-      activity.updateItem(activityId, { detail: "Reading source..." })
+      activity.updateItem(activityId, { phase: "local", detail: "Reading source..." })
     }
   }
 
@@ -743,7 +745,7 @@ async function autoIngestImpl(
     try {
       const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
       const cachePath = `${cacheDir}/.cache/${fileName}.txt`
-      activity.updateItem(activityId, { detail: "OpenDataLoader: parsing PDF..." })
+      activity.updateItem(activityId, { phase: "local", detail: "OpenDataLoader: parsing PDF..." })
       const markdown = await parsePdfWithOpenDataLoader(
         sp,
         useWikiStore.getState().opendataloaderPath,
@@ -763,11 +765,20 @@ async function autoIngestImpl(
         `[ingest:opendataloader] parsing failed, falling back to built-in extraction: ${msg}`,
       )
       activity.updateItem(activityId, {
+        phase: "local",
         detail: `OpenDataLoader failed, falling back to built-in PDF extraction: ${msg}`,
       })
     }
   }
 
+  // The built-in extractors (pdfium, docx, pptx, xlsx, epub …) run here, on
+  // this machine. Naming it as its own step is what makes the local half of
+  // the pipeline visible in the activity panel instead of looking like a stall
+  // before the LLM starts.
+  activity.updateItem(activityId, {
+    phase: "local",
+    detail: "Local parsing: extracting text...",
+  })
   const [sourceContent, schema, purpose, index, overview] = await Promise.all([
     tryReadSourceTextFile(sp),
     tryReadFile(`${pp}/schema.md`),
@@ -855,6 +866,7 @@ async function autoIngestImpl(
                   outputLanguage: getLanguagePromptName(getOutputLanguage(sourceContent)),
                   onProgress: (done, total) =>
                     activity.updateItem(activityId, {
+                      phase: "llm",
                       detail: `Captioning images... ${done}/${total}`,
                     }),
                 }),
@@ -916,7 +928,7 @@ async function autoIngestImpl(
   //
   // Failure here is never fatal — extractAndSaveSourceImages logs
   // and returns [] on any error.
-  activity.updateItem(activityId, { detail: "Extracting embedded images..." })
+  activity.updateItem(activityId, { phase: "local", detail: "Extracting embedded images..." })
   console.log(`[ingest:diag] full-pipeline branch: starting image extraction for ${sp}`)
   const skipNativePdfImageExtraction = isPdf && (
     hasMineruImageRefs(sourceContent, sourceSummarySlug)
@@ -994,7 +1006,7 @@ async function autoIngestImpl(
     savedImages.length > 0 &&
     /!\[\]\(/.test(enrichedSourceContent)
   ) {
-    activity.updateItem(activityId, { detail: "Captioning images..." })
+    activity.updateItem(activityId, { phase: "llm", detail: "Captioning images..." })
     const ourMediaPrefix = `${pp}/wiki/media/${sourceSummarySlug}/`
     try {
       const result = await withProjectLock(`${pp}\0image-caption-cache`, () =>
@@ -1011,6 +1023,7 @@ async function autoIngestImpl(
           outputLanguage: getLanguagePromptName(getOutputLanguage(enrichedSourceContent)),
           onProgress: (done, total) =>
             activity.updateItem(activityId, {
+              phase: "llm",
               detail: `Captioning images... ${done}/${total}`,
             }),
         }),
@@ -1061,6 +1074,7 @@ async function autoIngestImpl(
   // LLM reads the source and produces a structured analysis:
   // key entities, concepts, main arguments, connections to existing wiki, contradictions
   activity.updateItem(activityId, {
+    phase: "llm",
     detail: precomputedAnalysis
       ? "Step 1/2: Consolidating long-source analysis..."
       : "Step 1/2: Analyzing source...",
@@ -1097,7 +1111,7 @@ async function autoIngestImpl(
 
   // ── Step 2: Generation ────────────────────────────────────────
   // LLM takes the analysis as context and produces wiki files + review items
-  activity.updateItem(activityId, { detail: "Step 2/2: Generating wiki pages..." })
+  activity.updateItem(activityId, { phase: "llm", detail: "Step 2/2: Generating wiki pages..." })
 
   let generation = ""
 
@@ -1201,7 +1215,7 @@ async function autoIngestImpl(
   // ── Step 3: Write files ───────────────────────────────────────
   return runCommit(async () => {
   throwIfIngestAborted(signal, activityId)
-  activity.updateItem(activityId, { detail: "Writing files..." })
+  activity.updateItem(activityId, { phase: "local", detail: "Writing files..." })
   await migrateLegacySourceSummaryIfSafe(pp, sourceIdentity, sourceSummaryPath)
   const writeResult = await writeFileBlocks(
     pp,
@@ -1225,6 +1239,7 @@ async function autoIngestImpl(
 
   if (unrecoveredTruncatedPaths.length > 0 && !signal?.aborted) {
     activity.updateItem(activityId, {
+      phase: "llm",
       detail: `Retrying truncated wiki files: ${unrecoveredTruncatedPaths.join(", ")}`,
     })
     let repairOutput = ""
@@ -2946,6 +2961,7 @@ async function analyzeLongSourceInChunks(
 
   if (completedThrough > 0) {
     activity.updateItem(activityId, {
+      phase: "llm",
       detail: `Resuming long source analysis from chunk ${completedThrough + 1}/${chunks.length}...`,
     })
   }
@@ -2954,6 +2970,7 @@ async function analyzeLongSourceInChunks(
     if (chunk.index <= completedThrough) continue
     throwIfIngestAborted(signal, activityId)
     activity.updateItem(activityId, {
+      phase: "llm",
       detail: `Analyzing long source chunk ${chunk.index}/${chunk.total}...`,
     })
 
