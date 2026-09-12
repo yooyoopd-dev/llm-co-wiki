@@ -8,14 +8,15 @@
 //! It cannot be linked in. The project
 //! (github.com/opendataloader-project/opendataloader-pdf) is a **Java** tool
 //! and its Node and Python SDKs are wrappers that spawn `java -jar`, so this
-//! shells out too. It ships in two shapes, and both are supported because a
-//! user is as likely to have one as the other:
+//! shells out too. It ships in more than one shape, and each is supported
+//! because a user is as likely to have one as the other:
 //!
 //! * **A jar.** The GitHub release is `opendataloader-pdf-cli-<version>.zip`
 //!   containing `opendataloader-pdf-cli-<version>.jar` — no executable at all.
 //!   Point the setting at the jar, or at the folder holding it.
-//! * **An executable on PATH.** `npm i -g @opendataloader/pdf` installs an
-//!   `opendataloader-pdf` shim. Used when the setting is left empty.
+//! * **An executable on PATH.** `npm i -g @opendataloader/pdf` and
+//!   `pip install opendataloader-pdf` both install an `opendataloader-pdf`
+//!   shim. Used when the setting is left empty.
 //!
 //! Either way a JRE 11+ has to be present.
 //!
@@ -24,8 +25,11 @@
 //!
 //! * There is **no `--version` flag** (`CLIMain`/`CLIOptions` define none), so
 //!   probing with one reports a broken install for a working jar. The health
-//!   probe uses `--export-options`, which prints the option list as JSON and
-//!   exits 0.
+//!   probe uses `--export-options`, which the jar answers with its option list
+//!   and exit 0. The SDK shims do not all carry that flag — the Python one is
+//!   an argparse front end that answers an unknown flag with its own usage
+//!   banner and exit 2 — so a rejected flag counts as installed too, as long
+//!   as the banner is recognisably this CLI's. See `identifies_cli`.
 //! * Conversion writes **files**, not stdout. Given `-o <dir> -f markdown`,
 //!   `MarkdownGenerator` names its output by replacing the input name's last
 //!   three characters with `md`, so `report.pdf` becomes `report.md`. Each
@@ -49,8 +53,26 @@ const DETECT_TIMEOUT_SECS: u64 = 90;
 /// stream is trimmed to one short line.
 const DETECT_SNIPPET_CHARS: usize = 120;
 
-/// The CLI has no `--version`; this prints its option list and exits 0.
+/// The CLI has no `--version`; the jar answers this with its option list.
 const PROBE_FLAG: &str = "--export-options";
+
+/// Is this the OpenDataLoader CLI talking?
+///
+/// The probe only has to prove that the process starts and parses arguments,
+/// and a shim that rejects `--export-options` with
+/// `usage: opendataloader-pdf [-h] [-o OUTPUT_DIR] …` has proved exactly that.
+/// Both halves are required: a failed spawn also names the command
+/// (`'opendataloader-pdf' is not recognized …`) but prints no usage.
+pub fn identifies_cli(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("opendataloader") && lower.contains("usage")
+}
+
+fn combined_output(out: &std::process::Output) -> Vec<u8> {
+    let mut bytes = out.stdout.clone();
+    bytes.extend_from_slice(&out.stderr);
+    bytes
+}
 
 #[derive(Serialize)]
 pub struct DetectResult {
@@ -131,7 +153,7 @@ pub async fn resolve_runner(configured: Option<&str>) -> Result<Runner, String> 
         )
         .await
         .map_err(|e| {
-            format!("{e}. Either install it with `npm i -g @opendataloader/pdf`, or download the CLI release and set its path in Settings.")
+            format!("{e}. Either install it with `npm i -g @opendataloader/pdf` or `pip install opendataloader-pdf`, or download the CLI release and set its path in Settings.")
         })?;
         return Ok(Runner::Exe(exe));
     };
@@ -310,11 +332,19 @@ pub async fn opendataloader_detect(cli_path: Option<String>) -> Result<DetectRes
     };
 
     match outcome {
-        Ok(out) if out.status.success() => {
+        Ok(out)
+            if out.status.success()
+                || identifies_cli(&String::from_utf8_lossy(&combined_output(&out))) =>
+        {
+            let code = out
+                .status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string());
             lines.push(format!(
-                "3 launch   {label} {PROBE_FLAG} -> exit 0 in {elapsed_ms}ms"
+                "3 launch   {label} {PROBE_FLAG} -> exit {code} in {elapsed_ms}ms"
             ));
-            lines.push(format!("  stdout   {}", snippet(&out.stdout)));
+            lines.push(format!("  output   {}", snippet(&combined_output(&out))));
             lines.push("=> INSTALLED".to_string());
             Ok(DetectResult {
                 installed: true,
@@ -626,6 +656,33 @@ mod tests {
         let err = resolve_runner(Some("   ")).await.unwrap_err();
         assert!(err.contains("npm i -g @opendataloader/pdf"), "{err}");
         assert!(err.contains("Settings"), "{err}");
+    }
+
+    #[test]
+    fn a_shim_that_rejects_the_probe_flag_still_counts_as_installed() {
+        // Verbatim from a pip-installed opendataloader-pdf.exe on Windows,
+        // which is an argparse front end and exits 2 on an unknown flag.
+        let usage = "usage: opendataloader-pdf [-h] [-o OUTPUT_DIR] [-p PASSWORD] [-f FORMAT] [-q] [--content-safety-off CONTENT_SAFETY_OFF]";
+        assert!(identifies_cli(usage));
+    }
+
+    #[test]
+    fn a_command_that_never_ran_does_not_count_as_installed() {
+        // cmd.exe names the command it could not find, so naming it is not
+        // enough on its own.
+        assert!(!identifies_cli(
+            "'opendataloader-pdf' is not recognized as an internal or external command, operable program or batch file."
+        ));
+        assert!(!identifies_cli(""));
+        assert!(!identifies_cli("Error: Unable to access jarfile opendataloader-pdf-cli-1.4.2.jar"));
+        // Some other tool's help text is not this CLI's.
+        assert!(!identifies_cli("usage: pdftotext [options] <PDF-file>"));
+    }
+
+    #[test]
+    fn probe_output_is_matched_case_insensitively() {
+        // picocli prints "Usage:", argparse prints "usage:".
+        assert!(identifies_cli("Usage: OpenDataLoader-PDF [-hq] [-o=<outputDir>]"));
     }
 
     #[tokio::test]

@@ -988,7 +988,7 @@
         "preload": "preload — built-in (pdfium)",
         "opendataloader": "opendataloader — layout-aware Markdown",
         "preloadHint": "Built-in pdfium text extraction. Fast, no external dependency, but layout and tables are flattened to plain text.",
-        "opendataloaderHint": "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires `npm i -g @opendataloader/pdf` and a JRE 11+ on PATH. Nothing is uploaded.",
+        "opendataloaderHint": "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires the CLI (`npm i -g @opendataloader/pdf` or `pip install opendataloader-pdf`) and a JRE 11+ on PATH. Nothing is uploaded.",
         "cliPath": "CLI path (optional)",
         "cliPathHint": "Point at the downloaded opendataloader-pdf-cli-<version>.jar, or the folder holding it — the jar runs through java. Leave empty to use an `opendataloader-pdf` command on PATH (npm install).",
         "check": "Check installation",
