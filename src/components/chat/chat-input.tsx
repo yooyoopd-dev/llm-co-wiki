@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
-import { BrainCircuit, ChevronDown, FileSearch, FileText, Globe2, ImagePlus, Send, Sparkles, Square, X } from "lucide-react"
+import { BrainCircuit, ChevronDown, FileText, ImagePlus, Send, Sparkles, Square, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { isImeComposing } from "@/lib/keyboard-utils"
 import type { MessageImage } from "@/stores/chat-store"
 import type { ChatAgentMode, ChatRetrievalMode } from "@/lib/chat-agent-types"
@@ -16,8 +15,6 @@ import {
 } from "@/lib/chat-image-utils"
 
 export interface ChatSendOptions {
-  useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   skills: string[]
@@ -133,21 +130,16 @@ interface ChatInputProps {
   onSend: (text: string, images: MessageImage[], options: ChatSendOptions) => void
   onStop: () => void
   isStreaming: boolean
-  useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   availableSkills: ChatSkillOption[]
   selectedSkills: string[]
   availableContextFiles: string[]
   selectedContextFiles: string[]
-  onUseWebSearchChange: (enabled: boolean) => void
-  onUseAnyTxtSearchChange: (enabled: boolean) => void
   onAgentModeChange: (mode: ChatAgentMode) => void
   onRetrievalModeChange: (mode: ChatRetrievalMode) => void
   onSelectedSkillsChange: (skills: string[]) => void
   onSelectedContextFilesChange: (paths: string[]) => void
-  anyTxtAvailable?: boolean
   imageInputAvailable?: boolean
   placeholder?: string
 }
@@ -156,21 +148,16 @@ export function ChatInput({
   onSend,
   onStop,
   isStreaming,
-  useWebSearch,
-  useAnyTxtSearch,
   agentMode,
   retrievalMode,
   availableSkills,
   selectedSkills,
   availableContextFiles,
   selectedContextFiles,
-  onUseWebSearchChange,
-  onUseAnyTxtSearchChange,
   onAgentModeChange,
   onRetrievalModeChange,
   onSelectedSkillsChange,
   onSelectedContextFilesChange,
-  anyTxtAvailable = true,
   imageInputAvailable = true,
   placeholder,
 }: ChatInputProps) {
@@ -234,10 +221,6 @@ export function ChatInput({
     && contextFileOptions.length > 0
     && !isStreaming
   )
-
-  useEffect(() => {
-    if (!anyTxtAvailable && useAnyTxtSearch) onUseAnyTxtSearchChange(false)
-  }, [anyTxtAvailable, onUseAnyTxtSearchChange, useAnyTxtSearch])
 
   useEffect(() => {
     setSlashSkillIndex(0)
@@ -372,8 +355,6 @@ export function ChatInput({
       return
     }
     onSend(trimmed, images, {
-      useWebSearch,
-      useAnyTxtSearch,
       agentMode,
       retrievalMode,
       skills: selectedSkills,
@@ -387,7 +368,7 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
-  }, [agentMode, imageInputAvailable, images, isStreaming, onSend, retrievalMode, selectedContextFiles, selectedSkills, t, useAnyTxtSearch, useWebSearch, value])
+  }, [agentMode, imageInputAvailable, images, isStreaming, onSend, retrievalMode, selectedContextFiles, selectedSkills, t, value])
 
   const applySlashSkill = useCallback(
     (skill: ChatSkillOption) => {
@@ -706,51 +687,6 @@ export function ChatInput({
                 <span className="hidden sm:inline">{t("chat.attachImage")}</span>
               </button>
             </span>
-            <button
-              type="button"
-              aria-pressed={useWebSearch}
-              onClick={() => onUseWebSearchChange(!useWebSearch)}
-              disabled={isStreaming}
-              className={searchToggleClass(useWebSearch)}
-            >
-              <Globe2 className="h-3.5 w-3.5" />
-              {t("chat.useWebSearch")}
-              <span
-                className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
-                  useWebSearch ? "bg-emerald-500" : "bg-muted-foreground/30"
-                }`}
-              />
-            </button>
-            <TooltipProvider delay={0}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="inline-flex" />
-                  }
-                >
-                  <button
-                    type="button"
-                    aria-pressed={useAnyTxtSearch}
-                    onClick={() => onUseAnyTxtSearchChange(!useAnyTxtSearch)}
-                    disabled={isStreaming || !anyTxtAvailable}
-                    className={searchToggleClass(useAnyTxtSearch)}
-                  >
-                    <FileSearch className="h-3.5 w-3.5" />
-                    {t("chat.useAnyTxtSearch")}
-                    <span
-                      className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
-                        useAnyTxtSearch ? "bg-emerald-500" : "bg-muted-foreground/30"
-                      }`}
-                    />
-                  </button>
-                </TooltipTrigger>
-                {!anyTxtAvailable && (
-                  <TooltipContent side="top" className="max-w-64 whitespace-normal leading-relaxed">
-                    {t("chat.enableAnyTxtInSettings")}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
             <div className="relative">
               <button
                 type="button"

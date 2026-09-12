@@ -6,10 +6,7 @@ pub enum AgentCapability {
     ReadProject,
     ReadSource,
     SearchWiki,
-    SearchWeb,
-    SearchAnyTxt,
     WriteWiki,
-    RunDeepResearch,
     Network,
     Process,
 }
@@ -26,8 +23,6 @@ impl PermissionPolicy {
                 AgentCapability::ReadProject,
                 AgentCapability::ReadSource,
                 AgentCapability::SearchWiki,
-                AgentCapability::SearchWeb,
-                AgentCapability::SearchAnyTxt,
                 AgentCapability::WriteWiki,
                 AgentCapability::Network,
                 // Process remains inert unless AgentChatRequest carries a

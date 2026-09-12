@@ -49,8 +49,6 @@ interface PersistedChatData {
 }
 
 export interface ChatPreferences {
-  useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   selectedSkills: string[]
@@ -256,8 +254,6 @@ export async function loadChatPreferences(projectPath: string): Promise<ChatPref
     const content = await readFile(`${pp}/.llm-wiki/chat-preferences.json`)
     const parsed = JSON.parse(content) as Partial<ChatPreferences>
     return {
-      useWebSearch: parsed.useWebSearch === true,
-      useAnyTxtSearch: parsed.useAnyTxtSearch === true,
       agentMode: normalizePersistedAgentMode(parsed.agentMode),
       retrievalMode: normalizePersistedRetrievalMode(parsed.retrievalMode),
       selectedSkills: normalizePersistedSkillList(parsed.selectedSkills),
@@ -265,8 +261,6 @@ export async function loadChatPreferences(projectPath: string): Promise<ChatPref
     }
   } catch {
     return {
-      useWebSearch: false,
-      useAnyTxtSearch: false,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],

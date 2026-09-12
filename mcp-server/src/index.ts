@@ -132,8 +132,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           top_k: { type: "number", description: "Maximum wiki references to retrieve. The API clamps to its configured maximum." },
           include_content: { type: "boolean", description: "Include full page content in retrieval when supported by the API. Defaults to false." },
           wiki: { type: "boolean", description: "Enable wiki retrieval. Defaults to true." },
-          web: { type: "boolean", description: "Enable backend web.search when the Agent router decides external search is useful. Defaults to false." },
-          anytxt: { type: "boolean", description: "Enable backend anytxt.search for source/local-file questions when AnyTXT is configured. Defaults to false." },
           skills: {
             type: "array",
             items: { type: "string" },
@@ -260,8 +258,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           topK: numberArg(args.top_k),
           includeContent: boolArg(args.include_content, false),
           wiki: boolArg(args.wiki, true),
-          web: boolArg(args.web, false),
-          anytxt: boolArg(args.anytxt, false),
           skills: stringArrayArg(args.skills),
           persistSession: optionalStringArg(args.session_id) !== undefined,
         })

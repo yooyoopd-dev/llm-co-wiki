@@ -60,71 +60,6 @@ interface LlmConfig {
   customHeaders?: Record<string, string>
 }
 
-export type SearchProvider =
-  | "tavily"
-  | "serpapi"
-  | "searxng"
-  | "ollama"
-  | "brave"
-  | "bocha"
-  | "firecrawl"
-  | "none"
-export type DeepResearchSource = "web" | "anytxt" | "both"
-export type SerpApiEngine =
-  | "google"
-  | "google_news"
-  | "google_scholar"
-  | "google_patents"
-  | "bing"
-  | "duckduckgo"
-  | "google_images"
-  | "google_videos"
-  | "youtube"
-  | string
-export type SearXngCategory =
-  | "general"
-  | "news"
-  | "science"
-  | "it"
-  | "images"
-  | "videos"
-  | "files"
-  | "map"
-  | "music"
-  | "social media"
-  | string
-
-export interface SearchProviderOverride {
-  apiKey?: string
-  baseUrl?: string
-  serpApiEngine?: SerpApiEngine
-  searXngUrl?: string
-  searXngCategories?: SearXngCategory[]
-  ollamaUrl?: string
-}
-
-export type SearchProviderConfigs = Partial<Record<Exclude<SearchProvider, "none">, SearchProviderOverride>>
-
-export interface AnyTxtConfig {
-  enabled?: boolean
-  endpoint?: string
-  filterDir?: string
-  filterExt?: string
-  limit?: number
-}
-
-interface SearchApiConfig {
-  provider: SearchProvider
-  apiKey: string
-  serpApiEngine?: SerpApiEngine
-  searXngUrl?: string
-  searXngCategories?: SearXngCategory[]
-  ollamaUrl?: string
-  providerConfigs?: SearchProviderConfigs
-  deepResearchSource?: DeepResearchSource
-  anyTxt?: AnyTxtConfig
-}
-
 interface EmbeddingConfig {
   enabled: boolean
   endpoint: string // e.g. "http://127.0.0.1:1234/v1/embeddings"
@@ -447,7 +382,6 @@ interface WikiState {
   activePresetId: string | null
   taskModelRouting: TaskModelRoutingConfig
   projectLlmOverride: ProjectLlmOverride
-  searchApiConfig: SearchApiConfig
   embeddingConfig: EmbeddingConfig
   multimodalConfig: MultimodalConfig
   outputLanguage: OutputLanguage
@@ -485,7 +419,6 @@ interface WikiState {
   setActivePresetId: (id: string | null) => void
   setTaskModelRouting: (config: TaskModelRoutingConfig) => void
   setProjectLlmOverride: (config: ProjectLlmOverride) => void
-  setSearchApiConfig: (config: SearchApiConfig) => void
   setEmbeddingConfig: (config: EmbeddingConfig) => void
   setMultimodalConfig: (config: MultimodalConfig) => void
   setOutputLanguage: (lang: OutputLanguage) => void
@@ -595,23 +528,6 @@ export const useWikiStore = create<WikiState>((set) => ({
   setExternalPreview: (externalPreview) => set({ externalPreview }),
   setPendingScrollImageSrc: (pendingScrollImageSrc) => set({ pendingScrollImageSrc }),
   setActiveView: (activeView) => set({ activeView, previewReturnView: null }),
-  searchApiConfig: {
-    provider: "none",
-    apiKey: "",
-    serpApiEngine: "google",
-    searXngUrl: "",
-    searXngCategories: ["general"],
-    providerConfigs: {},
-    deepResearchSource: "web",
-    anyTxt: {
-      enabled: false,
-      endpoint: "http://127.0.0.1:9920",
-      filterDir: "",
-      filterExt: "*",
-      limit: 20,
-    },
-  },
-
   embeddingConfig: {
     enabled: false,
     endpoint: "",
@@ -700,7 +616,6 @@ export const useWikiStore = create<WikiState>((set) => ({
   setActivePresetId: (activePresetId) => set({ activePresetId }),
   setTaskModelRouting: (taskModelRouting) => set({ taskModelRouting }),
   setProjectLlmOverride: (projectLlmOverride) => set({ projectLlmOverride }),
-  setSearchApiConfig: (searchApiConfig) => set({ searchApiConfig }),
   setEmbeddingConfig: (embeddingConfig) => set({ embeddingConfig }),
   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
@@ -722,4 +637,4 @@ export const useWikiStore = create<WikiState>((set) => ({
   bumpDataVersion: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),
 }))
 
-export type { WikiState, LlmConfig, SearchApiConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, ApiConfig }
+export type { WikiState, LlmConfig, EmbeddingConfig, MultimodalConfig, OutputLanguage, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, ApiConfig }

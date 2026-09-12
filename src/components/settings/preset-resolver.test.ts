@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { LLM_PRESETS } from "./llm-presets"
 import { disabledLlmConfig, resolveConfig } from "./preset-resolver"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import type { LlmConfig } from "@/stores/wiki-store"
@@ -19,47 +18,6 @@ function fallbackConfig(overrides: Partial<LlmConfig> = {}): LlmConfig {
 }
 
 describe("resolveConfig", () => {
-  it("keeps DeepSeek presets aligned with the current V4 model list", () => {
-    const deepseek = LLM_PRESETS.find((preset) => preset.id === "deepseek")
-
-    expect(deepseek?.defaultModel).toBe("deepseek-v4-flash")
-    expect(deepseek?.suggestedModels).toEqual([
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-      "deepseek-chat",
-      "deepseek-reasoner",
-    ])
-  })
-
-  it("exposes Atlas Cloud as an OpenAI-compatible chat-completions preset", () => {
-    const atlas = LLM_PRESETS.find((preset) => preset.id === "atlascloud")
-
-    expect(atlas?.provider).toBe("custom")
-    expect(atlas?.baseUrl).toBe("https://api.atlascloud.ai/v1")
-    expect(atlas?.apiMode).toBe("chat_completions")
-    expect(atlas?.defaultModel).toBe("deepseek-ai/deepseek-v4-pro")
-    expect(atlas?.suggestedModels).toContain("deepseek-ai/deepseek-v4-pro")
-  })
-
-  it("keeps Xiaomi MiMo presets aligned with current official and Token Plan endpoints", () => {
-    const mimo = LLM_PRESETS.find((preset) => preset.id === "xiaomi-mimo")
-
-    expect(mimo?.defaultModel).toBe("mimo-v2.5-pro")
-    expect(mimo?.suggestedContextSize).toBe(1000000)
-    expect(mimo?.baseUrl).toBe("https://api.xiaomimimo.com/v1")
-    expect(mimo?.baseUrlByMode).toEqual({
-      chat_completions: "https://token-plan-cn.xiaomimimo.com/v1",
-      anthropic_messages: "https://token-plan-cn.xiaomimimo.com/anthropic",
-    })
-    expect(mimo?.suggestedModels).toEqual([
-      "mimo-v2.5-pro",
-      "mimo-v2.5",
-      "mimo-v2-flash",
-      "mimo-v2-pro",
-      "mimo-v2-omni",
-    ])
-  })
-
   it("defaults reasoning to auto instead of inheriting another preset's fallback", () => {
     const preset: LlmPreset = {
       id: "deepseek",

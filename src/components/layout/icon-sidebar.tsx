@@ -1,19 +1,14 @@
 import { useState, useEffect } from "react"
 import {
-  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe, MessageSquare, Sparkles,
+  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, MessageSquare, Sparkles,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
-import { useResearchStore } from "@/stores/research-store"
 import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
 import { useTranslation } from "react-i18next"
 import logoImg from "@/assets/logo.jpg"
 import type { WikiState } from "@/stores/wiki-store"
-import {
-  isResearchPanelVisible,
-  nextResearchPanelNavState,
-} from "./research-panel-nav"
 
 type NavView = WikiState["activeView"]
 
@@ -36,9 +31,6 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
   const activeView = useWikiStore((s) => s.activeView)
   const setActiveView = useWikiStore((s) => s.setActiveView)
   const pendingCount = useReviewStore((s) => s.items.filter((i) => !i.resolved).length)
-  const researchPanelOpen = useResearchStore((s) => s.panelOpen)
-  const researchActiveCount = useResearchStore((s) => s.tasks.filter((t) => t.status !== "done" && t.status !== "error").length)
-  const toggleResearchPanel = useResearchStore((s) => s.setPanelOpen)
   // Use `hasAvailableUpdate` (ignores dismiss state) rather than
   // `shouldShowUpdateBanner`. The dot is a passive signpost — it
   // should keep marking the gear as long as the update exists, even
@@ -65,12 +57,6 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
     return () => clearInterval(interval)
   }, [])
 
-  function handleResearchPanelToggle() {
-    const next = nextResearchPanelNavState(activeView, researchPanelOpen)
-    if (next.activeView !== activeView) setActiveView(next.activeView)
-    toggleResearchPanel(next.researchPanelOpen)
-  }
-
   return (
     <TooltipProvider delay={300}>
       <div className="flex h-full w-12 flex-col items-center border-r bg-muted/50 py-2">
@@ -82,7 +68,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
             className="h-8 w-8 rounded-[22%]"
           />
         </div>
-        {/* Top: main nav items + Deep Research */}
+        {/* Top: main nav items */}
         <div className="flex flex-1 flex-col items-center gap-1">
           {NAV_ITEMS.map(({ view, icon: Icon, labelKey }) => (
             <Tooltip key={view}>
@@ -107,25 +93,6 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
               </TooltipContent>
             </Tooltip>
           ))}
-          {/* Deep Research — same row as other nav items */}
-          <Tooltip>
-            <TooltipTrigger
-              onClick={handleResearchPanelToggle}
-              className={`relative flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
-                isResearchPanelVisible(activeView, researchPanelOpen)
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
-              }`}
-            >
-              <Globe className="h-5 w-5" />
-              {researchActiveCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
-                  {researchActiveCount}
-                </span>
-              )}
-            </TooltipTrigger>
-            <TooltipContent side="right">{t("research.title")}</TooltipContent>
-          </Tooltip>
           <Tooltip>
             <TooltipTrigger
               onClick={() => setActiveView("skills")}

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Bot,
   Binary,
-  Globe,
   Languages,
   Palette,
   Info,
@@ -32,7 +31,6 @@ import { setIngestWorkerLimit } from "@/lib/ingest-queue"
 import { LlmProviderSection } from "./sections/llm-provider-section"
 import { EmbeddingSection } from "./sections/embedding-section"
 import { MultimodalSection } from "./sections/multimodal-section"
-import { WebSearchSection } from "./sections/web-search-section"
 import { OutputSection } from "./sections/output-section"
 import { InterfaceSection } from "./sections/interface-section"
 import { NetworkSection } from "./sections/network-section"
@@ -49,7 +47,6 @@ type CategoryId =
   | "llm"
   | "embedding"
   | "multimodal"
-  | "web-search"
   | "network"
   | "source-watch"
   | "scheduled-import"
@@ -74,7 +71,6 @@ const CATEGORIES: Category[] = [
   { id: "llm", labelKey: "settings.categories.llm", icon: Bot },
   { id: "embedding", labelKey: "settings.categories.embedding", icon: Binary },
   { id: "multimodal", labelKey: "settings.categories.multimodal", icon: ImageIcon },
-  { id: "web-search", labelKey: "settings.categories.webSearch", icon: Globe },
   { id: "network", labelKey: "settings.categories.network", icon: Network },
   { id: "source-watch", labelKey: "settings.categories.sourceWatch", icon: FolderSync },
   { id: "scheduled-import", labelKey: "settings.categories.scheduledImport", icon: Clock },
@@ -659,8 +655,6 @@ export function SettingsView() {
         return <EmbeddingSection draft={draft} setDraft={setDraft} />
       case "multimodal":
         return <MultimodalSection draft={draft} setDraft={setDraft} />
-      case "web-search":
-        return <WebSearchSection />
       case "network":
         return <NetworkSection draft={draft} setDraft={setDraft} />
       case "source-watch":

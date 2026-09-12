@@ -1,6 +1,6 @@
 import { load } from "@tauri-apps/plugin-store"
 import type { WikiProject } from "@/types/wiki"
-import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, SearchApiConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig, PdfParser } from "@/stores/wiki-store"
+import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig, PdfParser } from "@/stores/wiki-store"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { normalizePath } from "@/lib/path-utils"
 import { DEFAULT_ZOOM_LEVEL, clampZoomLevel } from "@/stores/zoom-store"
@@ -153,18 +153,6 @@ export async function loadProjectLlmOverride(projectId: string): Promise<Project
     model: typeof saved?.model === "string" ? saved.model : "",
     profile: saved?.profile,
   }
-}
-
-const SEARCH_API_KEY = "searchApiConfig"
-
-export async function saveSearchApiConfig(config: SearchApiConfig): Promise<void> {
-  const store = await getStore()
-  await store.set(SEARCH_API_KEY, config)
-}
-
-export async function loadSearchApiConfig(): Promise<SearchApiConfig | null> {
-  const store = await getStore()
-  return (await store.get<SearchApiConfig>(SEARCH_API_KEY)) ?? null
 }
 
 const EMBEDDING_KEY = "embeddingConfig"

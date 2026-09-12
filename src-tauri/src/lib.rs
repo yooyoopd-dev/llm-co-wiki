@@ -32,8 +32,6 @@ struct AgentProjectEntry {
 struct AgentRuntimeConfig {
     embedding: Option<commands::search::SearchEmbeddingConfig>,
     llm: Option<agent::provider::LlmConfig>,
-    web_search: Option<agent::tools::WebSearchConfig>,
-    anytxt: Option<agent::tools::AnyTxtConfig>,
 }
 
 #[tauri::command]
@@ -109,8 +107,6 @@ async fn agent_start_turn(
         project.path.clone(),
         runtime_config.embedding,
         runtime_config.llm,
-        runtime_config.web_search,
-        runtime_config.anytxt,
     );
     let user_message = request.message.clone();
     let persist_session = request.persist_session;
@@ -195,8 +191,6 @@ async fn agent_start_turn_stream(
         project.path.clone(),
         runtime_config.embedding,
         runtime_config.llm,
-        runtime_config.web_search,
-        runtime_config.anytxt,
     );
     let app_for_task = app.clone();
     let project_for_task = project.clone();
@@ -419,15 +413,6 @@ fn load_agent_runtime_config(app: &tauri::AppHandle) -> AgentRuntimeConfig {
             .and_then(|value| serde_json::from_value(value).ok()),
         llm: parsed
             .get("llmConfig")
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
-        web_search: parsed
-            .get("searchApiConfig")
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
-        anytxt: parsed
-            .get("searchApiConfig")
-            .and_then(|value| value.get("anyTxt"))
             .cloned()
             .and_then(|value| serde_json::from_value(value).ok()),
     }
@@ -658,8 +643,6 @@ pub fn run() {
             commands::search::embedding_fetch,
             commands::search::embedding_fetch_batch,
             commands::search::get_page_links,
-            commands::external_search::web_search,
-            commands::external_search::anytxt_search,
             clip_server_status,
             api_server_status,
             api_server_reload_config,

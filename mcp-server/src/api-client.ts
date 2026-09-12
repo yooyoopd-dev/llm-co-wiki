@@ -256,7 +256,7 @@ export class LlmWikiApiClient {
     }
   }
 
-  async chat(projectId = "current", message: string, options: { sessionId?: string; mode?: string; topK?: number; includeContent?: boolean; wiki?: boolean; web?: boolean; anytxt?: boolean; skills?: string[]; persistSession?: boolean } = {}): Promise<ApiChatResponse> {
+  async chat(projectId = "current", message: string, options: { sessionId?: string; mode?: string; topK?: number; includeContent?: boolean; wiki?: boolean; skills?: string[]; persistSession?: boolean } = {}): Promise<ApiChatResponse> {
     const json = await this.request(`/projects/${encodeURIComponent(projectId)}/chat`, {
       method: "POST",
       body: {
@@ -266,11 +266,7 @@ export class LlmWikiApiClient {
         mode: options.mode,
         topK: options.topK,
         includeContent: options.includeContent,
-        tools: {
-          wiki: options.wiki ?? true,
-          web: options.web ?? false,
-          anytxt: options.anytxt ?? false,
-        },
+        tools: { wiki: options.wiki ?? true },
         skills: options.skills,
       },
     })

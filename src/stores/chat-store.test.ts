@@ -11,8 +11,6 @@ describe("chat-store conversation isolation", () => {
       streamingContent: "",
       mode: "chat",
       ingestSource: null,
-      useWebSearch: false,
-      useAnyTxtSearch: false,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],

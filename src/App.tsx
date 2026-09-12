@@ -9,7 +9,7 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadActivePresetId, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadActivePresetId, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
 import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -348,10 +348,6 @@ function App() {
         if (savedTaskModelRouting) {
           useWikiStore.getState().setTaskModelRouting(savedTaskModelRouting)
         }
-        const savedSearchConfig = await loadSearchApiConfig()
-        if (savedSearchConfig) {
-          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
-        }
         const savedEmbeddingConfig = await loadEmbeddingConfig()
         if (savedEmbeddingConfig) {
           useWikiStore.getState().setEmbeddingConfig(savedEmbeddingConfig)
@@ -536,8 +532,6 @@ function App() {
       // conversation history load is deferred below.
       try {
         const savedChatPreferences = await loadChatPreferences(proj.path)
-        useChatStore.getState().setUseWebSearch(savedChatPreferences.useWebSearch)
-        useChatStore.getState().setUseAnyTxtSearch(savedChatPreferences.useAnyTxtSearch)
         useChatStore.getState().setAgentMode(savedChatPreferences.agentMode)
         useChatStore.getState().setRetrievalMode(savedChatPreferences.retrievalMode)
         useChatStore.getState().setDisabledSkills(savedChatPreferences.disabledSkills)
