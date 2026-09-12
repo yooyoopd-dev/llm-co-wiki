@@ -691,6 +691,8 @@ pub fn run() {
             commands::gemini_cli::gemini_cli_detect,
             commands::gemini_cli::gemini_cli_spawn,
             commands::gemini_cli::gemini_cli_kill,
+            commands::opendataloader::opendataloader_detect,
+            commands::opendataloader::opendataloader_parse_pdf,
             commands::extract_images::extract_pdf_images_cmd,
             commands::extract_images::extract_office_images_cmd,
             commands::extract_images::extract_and_save_pdf_images_cmd,
