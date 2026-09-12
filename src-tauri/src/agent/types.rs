@@ -39,10 +39,6 @@ impl Default for AgentRetrievalMode {
 pub struct AgentToolOptions {
     #[serde(default = "default_true")]
     pub wiki: bool,
-    #[serde(default)]
-    pub web: bool,
-    #[serde(default)]
-    pub anytxt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,11 +73,7 @@ impl Default for AgentSkillMode {
 
 impl Default for AgentToolOptions {
     fn default() -> Self {
-        Self {
-            wiki: true,
-            web: false,
-            anytxt: false,
-        }
+        Self { wiki: true }
     }
 }
 
@@ -307,8 +299,6 @@ mod tests {
         assert_eq!(req.context_files, vec!["wiki/page.md".to_string()]);
         assert_eq!(req.skill_mode, AgentSkillMode::Explicit);
         assert!(req.tools.wiki);
-        assert!(!req.tools.web);
-        assert!(!req.tools.anytxt);
         assert!(req.persist_session);
     }
 
@@ -319,9 +309,7 @@ mod tests {
             "mode": "local_first",
             "retrievalMode": "smart",
             "tools": {
-                "wiki": false,
-                "web": true,
-                "anytxt": true
+                "wiki": false
             }
         }))
         .unwrap();
@@ -329,8 +317,6 @@ mod tests {
         assert_eq!(req.mode, AgentMode::LocalFirst);
         assert_eq!(req.retrieval_mode, AgentRetrievalMode::Smart);
         assert!(!req.tools.wiki);
-        assert!(req.tools.web);
-        assert!(req.tools.anytxt);
         assert!(req.images.is_empty());
     }
 

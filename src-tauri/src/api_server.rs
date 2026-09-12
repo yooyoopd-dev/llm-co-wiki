@@ -1931,8 +1931,6 @@ fn prepare_chat(
         project.path.clone(),
         runtime_config.embedding,
         runtime_config.llm,
-        runtime_config.web_search,
-        runtime_config.anytxt,
     );
     let user_message_for_session = req.message.clone();
     let persist_session = req.persist_session;
@@ -2243,8 +2241,6 @@ fn load_embedding_config(app: &AppHandle) -> Option<commands::search::SearchEmbe
 struct AgentRuntimeConfig {
     embedding: Option<commands::search::SearchEmbeddingConfig>,
     llm: Option<agent::provider::LlmConfig>,
-    web_search: Option<agent::tools::WebSearchConfig>,
-    anytxt: Option<agent::tools::AnyTxtConfig>,
 }
 
 fn project_llm_config(parsed: &Value, project_id: &str) -> Option<agent::provider::LlmConfig> {
@@ -2342,15 +2338,6 @@ fn load_agent_runtime_config(app: &AppHandle, project_id: Option<&str>) -> Agent
                     .cloned()
                     .and_then(|value| serde_json::from_value(value).ok())
             }),
-        web_search: parsed
-            .get("searchApiConfig")
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
-        anytxt: parsed
-            .get("searchApiConfig")
-            .and_then(|value| value.get("anyTxt"))
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
     }
 }
 

@@ -325,18 +325,14 @@ describe("chat persistence — round-trip (new format)", () => {
     expect(loaded).toEqual({ conversations: [], messages: [] })
   })
 
-  it("round-trips chat search preferences", async () => {
+  it("round-trips chat tool preferences", async () => {
     await saveChatPreferences(tmp.path, {
-      useWebSearch: true,
-      useAnyTxtSearch: false,
       agentMode: "deep",
       retrievalMode: "smart",
       selectedSkills: ["reviewer", "illustrator"],
       disabledSkills: ["legacy"],
     })
     await expect(loadChatPreferences(tmp.path)).resolves.toEqual({
-      useWebSearch: true,
-      useAnyTxtSearch: false,
       agentMode: "deep",
       retrievalMode: "smart",
       selectedSkills: ["reviewer", "illustrator"],
@@ -344,14 +340,12 @@ describe("chat persistence — round-trip (new format)", () => {
     })
 
     const raw = await readFileRaw(`${tmp.path}/.llm-wiki/chat-preferences.json`)
-    expect(raw).toContain('"useWebSearch": true')
+    expect(raw).toContain('"agentMode": "deep"')
     expect(raw).toContain('"retrievalMode": "smart"')
   })
 
   it("round-trips faithful source retrieval preference", async () => {
     await saveChatPreferences(tmp.path, {
-      useWebSearch: false,
-      useAnyTxtSearch: false,
       agentMode: "standard",
       retrievalMode: "faithful",
       selectedSkills: [],
@@ -364,8 +358,6 @@ describe("chat persistence — round-trip (new format)", () => {
 
   it("defaults chat search preferences to off when no file exists", async () => {
     await expect(loadChatPreferences(tmp.path)).resolves.toEqual({
-      useWebSearch: false,
-      useAnyTxtSearch: false,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],

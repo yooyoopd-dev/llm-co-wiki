@@ -20,7 +20,7 @@ use super::permissions::{AgentCapability, PermissionPolicy};
 use super::provider::{AgentLlmProvider, LlmClient, LlmConfig};
 use super::router::route_query;
 use super::skills::{load_project_skills, AgentSkill};
-use super::tools::{self, AnyTxtConfig, ToolRegistry, WebSearchConfig};
+use super::tools::{self, ToolRegistry};
 use super::types::{
     AgentChatRequest, AgentChatResponse, AgentMode, AgentReference, AgentRetrievalMode,
     AgentSkillMode, AgentToolEvent, AgentUsage, AgentUserInputField, AgentUserInputOption,
@@ -52,8 +52,6 @@ pub struct AgentRuntime {
     project_path: String,
     embedding_config: Option<SearchEmbeddingConfig>,
     llm_config: Option<LlmConfig>,
-    web_search_config: Option<WebSearchConfig>,
-    anytxt_config: Option<AnyTxtConfig>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -133,16 +131,12 @@ impl AgentRuntime {
         project_path: impl Into<String>,
         embedding_config: Option<SearchEmbeddingConfig>,
         llm_config: Option<LlmConfig>,
-        web_search_config: Option<WebSearchConfig>,
-        anytxt_config: Option<AnyTxtConfig>,
     ) -> Self {
         Self {
             project_id: project_id.into(),
             project_path: project_path.into(),
             embedding_config,
             llm_config,
-            web_search_config,
-            anytxt_config,
         }
     }
 
@@ -196,7 +190,7 @@ impl AgentRuntime {
         );
         let mut references = Vec::new();
         let permission_policy = PermissionPolicy::api_default();
-        let router = route_query(message, request.mode, &request.tools);
+        let router = route_query(message, request.mode);
         let skills = load_project_skills(&self.project_path, &request.skills);
         check_cancel(cancellation.as_ref())?;
         if !request.skills.is_empty() {
@@ -220,23 +214,6 @@ impl AgentRuntime {
                 &event_sink,
                 AgentEvent::tool_end("skills.load", Some(skill_detail)),
             );
-        }
-
-        if request.tools.web && request.retrieval_mode != AgentRetrievalMode::Faithful {
-            permission_policy.require(AgentCapability::SearchWeb)?;
-            tool_emit_event(&mut tool_events, &mut events, &event_sink, AgentToolEvent {
-                tool: "web.search".to_string(),
-                status: "available".to_string(),
-                detail: Some("Web search is enabled for this turn. Router decides whether to execute it immediately.".to_string()),
-            });
-        }
-        if request.tools.anytxt && request.retrieval_mode != AgentRetrievalMode::Faithful {
-            permission_policy.require(AgentCapability::SearchAnyTxt)?;
-            tool_emit_event(&mut tool_events, &mut events, &event_sink, AgentToolEvent {
-                tool: "anytxt.search".to_string(),
-                status: "available".to_string(),
-                detail: Some("AnyTXT search is enabled for this turn. Router decides whether to execute it immediately.".to_string()),
-            });
         }
 
         let mut retrieval_parts = Vec::new();
@@ -315,18 +292,6 @@ impl AgentRuntime {
         let should_include_sources = router.should_include_sources || planned_has("source.search");
         let should_search_graph = matches!(router.intent, super::router::QueryIntent::NeedsGraph)
             || planned_has("graph.search");
-        let should_run_web = request.tools.web
-            && (matches!(
-                router.intent,
-                super::router::QueryIntent::NeedsExternalSearch
-            ) || planned_has("web.search")
-                || matches!(request.mode, AgentMode::Deep));
-        let should_run_anytxt = request.tools.anytxt
-            && (should_include_sources
-                || planned_has("anytxt.search")
-                || matches!(request.mode, AgentMode::Deep));
-        let deep_research = matches!(request.mode, AgentMode::Deep)
-            && (should_run_web || should_run_anytxt || should_include_sources);
         let shell_call = if skills.is_empty() {
             None
         } else if let Some(command) = request
@@ -589,24 +554,6 @@ impl AgentRuntime {
                     }
                 }
             }
-        }
-
-        if deep_research {
-            tool_emit_event(
-                &mut tool_events,
-                &mut events,
-                &event_sink,
-                AgentToolEvent {
-                    tool: "deep_research.run".to_string(),
-                    status: "started".to_string(),
-                    detail: Some(message.to_string()),
-                },
-            );
-            emit_event(
-                &mut events,
-                &event_sink,
-                AgentEvent::tool_start("deep_research.run", Some(message.to_string())),
-            );
         }
 
         if should_search_wiki {
@@ -940,210 +887,9 @@ impl AgentRuntime {
             }
         }
 
-        if should_run_web {
-            check_cancel(cancellation.as_ref())?;
-            permission_policy.require(AgentCapability::Network)?;
-            let web_query = planned_queries
-                .get("web.search")
-                .map(String::as_str)
-                .unwrap_or(message);
-            tool_emit_event(
-                &mut tool_events,
-                &mut events,
-                &event_sink,
-                AgentToolEvent {
-                    tool: "web.search".to_string(),
-                    status: "started".to_string(),
-                    detail: Some(web_query.to_string()),
-                },
-            );
-            emit_event(
-                &mut events,
-                &event_sink,
-                AgentEvent::tool_start("web.search", Some(web_query.to_string())),
-            );
-            match execute_tool_with_cancellation(
-                tool_registry.execute(
-                    "web.search",
-                    serde_json::json!({
-                        "query": web_query,
-                        "topK": request
-                            .top_k
-                            .unwrap_or(DEFAULT_CHAT_SEARCH_RESULTS)
-                            .clamp(1, MAX_CHAT_SEARCH_RESULTS)
-                    }),
-                    self.tool_context(),
-                ),
-                cancellation.as_ref(),
-            )
-            .await
-            .and_then(|value| {
-                serde_json::from_value::<Vec<AgentReference>>(value)
-                    .map_err(|err| format!("Invalid web.search result: {err}"))
-            }) {
-                Ok(web_refs) => {
-                    check_cancel(cancellation.as_ref())?;
-                    for reference in &web_refs {
-                        emit_event(
-                            &mut events,
-                            &event_sink,
-                            AgentEvent::ReferenceAdded {
-                                reference: reference.clone(),
-                            },
-                        );
-                    }
-                    let count = web_refs.len();
-                    references.extend(web_refs);
-                    tool_emit_event(
-                        &mut tool_events,
-                        &mut events,
-                        &event_sink,
-                        AgentToolEvent {
-                            tool: "web.search".to_string(),
-                            status: "completed".to_string(),
-                            detail: Some(format!("{count} result(s)")),
-                        },
-                    );
-                    emit_event(
-                        &mut events,
-                        &event_sink,
-                        AgentEvent::tool_end("web.search", Some(format!("{count} result(s)"))),
-                    );
-                }
-                Err(err) => {
-                    tool_emit_event(
-                        &mut tool_events,
-                        &mut events,
-                        &event_sink,
-                        AgentToolEvent {
-                            tool: "web.search".to_string(),
-                            status: "failed".to_string(),
-                            detail: Some(err.clone()),
-                        },
-                    );
-                    emit_event(
-                        &mut events,
-                        &event_sink,
-                        AgentEvent::tool_end("web.search", Some(format!("failed: {err}"))),
-                    );
-                }
-            }
-        }
-
-        if should_run_anytxt {
-            check_cancel(cancellation.as_ref())?;
-            permission_policy.require(AgentCapability::Network)?;
-            let anytxt_query = planned_queries
-                .get("anytxt.search")
-                .map(String::as_str)
-                .unwrap_or(message);
-            tool_emit_event(
-                &mut tool_events,
-                &mut events,
-                &event_sink,
-                AgentToolEvent {
-                    tool: "anytxt.search".to_string(),
-                    status: "started".to_string(),
-                    detail: Some(anytxt_query.to_string()),
-                },
-            );
-            emit_event(
-                &mut events,
-                &event_sink,
-                AgentEvent::tool_start("anytxt.search", Some(anytxt_query.to_string())),
-            );
-            match execute_tool_with_cancellation(
-                tool_registry.execute(
-                    "anytxt.search",
-                    serde_json::json!({
-                        "query": anytxt_query,
-                        "topK": request
-                            .top_k
-                            .unwrap_or(DEFAULT_CHAT_SEARCH_RESULTS)
-                            .clamp(1, MAX_CHAT_SEARCH_RESULTS)
-                    }),
-                    self.tool_context(),
-                ),
-                cancellation.as_ref(),
-            )
-            .await
-            .and_then(|value| {
-                serde_json::from_value::<Vec<AgentReference>>(value)
-                    .map_err(|err| format!("Invalid anytxt.search result: {err}"))
-            }) {
-                Ok(anytxt_refs) => {
-                    check_cancel(cancellation.as_ref())?;
-                    for reference in &anytxt_refs {
-                        emit_event(
-                            &mut events,
-                            &event_sink,
-                            AgentEvent::ReferenceAdded {
-                                reference: reference.clone(),
-                            },
-                        );
-                    }
-                    let count = anytxt_refs.len();
-                    references.extend(anytxt_refs);
-                    tool_emit_event(
-                        &mut tool_events,
-                        &mut events,
-                        &event_sink,
-                        AgentToolEvent {
-                            tool: "anytxt.search".to_string(),
-                            status: "completed".to_string(),
-                            detail: Some(format!("{count} result(s)")),
-                        },
-                    );
-                    emit_event(
-                        &mut events,
-                        &event_sink,
-                        AgentEvent::tool_end("anytxt.search", Some(format!("{count} result(s)"))),
-                    );
-                }
-                Err(err) => {
-                    tool_emit_event(
-                        &mut tool_events,
-                        &mut events,
-                        &event_sink,
-                        AgentToolEvent {
-                            tool: "anytxt.search".to_string(),
-                            status: "failed".to_string(),
-                            detail: Some(err.clone()),
-                        },
-                    );
-                    emit_event(
-                        &mut events,
-                        &event_sink,
-                        AgentEvent::tool_end("anytxt.search", Some(format!("failed: {err}"))),
-                    );
-                }
-            }
-        }
-
-        if deep_research {
-            tool_emit_event(
-                &mut tool_events,
-                &mut events,
-                &event_sink,
-                AgentToolEvent {
-                    tool: "deep_research.run".to_string(),
-                    status: "completed".to_string(),
-                    detail: Some(format!("{} reference(s)", references.len())),
-                },
-            );
-            emit_event(
-                &mut events,
-                &event_sink,
-                AgentEvent::tool_end(
-                    "deep_research.run",
-                    Some(format!("{} reference(s)", references.len())),
-                ),
-            );
-        }
-
         if retrieval_parts.is_empty() {
-            if !request.tools.wiki && !request.tools.web && !request.tools.anytxt {
-                retrieval_parts.push("No Agent tools were enabled for this request. Enable wiki, web, or AnyTXT tools to let the backend Agent retrieve supporting context.".to_string());
+            if !request.tools.wiki {
+                retrieval_parts.push("No Agent tools were enabled for this request. Enable the wiki tools to let the backend Agent retrieve supporting context.".to_string());
             } else {
                 retrieval_parts.push(
                     "No Agent tools ran before generation. Available tools were exposed as model hints."
@@ -2156,7 +1902,7 @@ impl AgentRuntime {
             .unwrap_or(DEFAULT_CHAT_SEARCH_RESULTS)
             .clamp(1, MAX_CHAT_SEARCH_RESULTS);
         match tool {
-            "wiki.search" | "source.search" | "graph.search" | "web.search" | "anytxt.search" => {
+            "wiki.search" | "source.search" | "graph.search" => {
                 let query = action
                     .query
                     .as_deref()
@@ -2268,7 +2014,7 @@ impl AgentRuntime {
                     search.mode, search.token_hits, search.vector_hits, search.graph_hits
                 ))
             }
-            "source.search" | "graph.search" | "web.search" | "anytxt.search" => {
+            "source.search" | "graph.search" => {
                 let found: Vec<AgentReference> = serde_json::from_value(value)
                     .map_err(|err| format!("Invalid {tool} result: {err}"))?;
                 let count = found.len();
@@ -2422,8 +2168,6 @@ impl AgentRuntime {
         tools::ToolContext {
             project_path: &self.project_path,
             embedding_config: self.embedding_config.clone(),
-            web_search_config: self.web_search_config.clone(),
-            anytxt_config: self.anytxt_config.clone(),
         }
     }
 
@@ -2454,12 +2198,6 @@ impl AgentRuntime {
             "graph.search",
             "wiki.write_page",
         ];
-        if tools.web {
-            available.push("web.search");
-        }
-        if tools.anytxt {
-            available.push("anytxt.search");
-        }
         if skills_enabled {
             available.push("skill.read_file");
             available.push("workspace.write_file");
@@ -2469,7 +2207,7 @@ impl AgentRuntime {
         let skill_context = render_skill_planner_context(skills, skill_mode);
         let workspace = agent_workspace_display(&self.project_path);
         let user = format!(
-            "User request:\n{message}\n\nSkill context:\n{skill_context}\n\nAvailable tools: {}\n\nAgent workspace for generated files: {workspace}\n\nReturn JSON exactly like {{\"toolCalls\":[{{\"tool\":\"wiki.search\",\"query\":\"short query\"}}]}}. Use an empty array when no tool is needed. The skill context and tool list above are already available to the assistant; do not call wiki.search, source.search, graph.search, web.search, anytxt.search, skill.read_file, workspace.write_file, or shell.exec merely to list, explain, or summarize the currently available skills, tools, modes, or agent capabilities. Use wiki.search for factual or topical retrieval. Prefer graph.search for relationships, dependencies, neighborhoods, backlinks, or connections between entities; pass concise entity or concept names instead of the full question. The planner may select both when the answer needs page content and graph structure. Prefer web.search only for current/external information. Prefer anytxt.search only for user files outside the wiki. Use wiki.write_page only when the user explicitly asks to create a wiki page; include path under wiki/ ending in .md and full Markdown content. Existing pages are create-only by default; include allowOverwrite:true only when the user explicitly asks to overwrite or update an existing wiki page. Use skill.read_file for Markdown/reference files inside an active skill directory. Use workspace.write_file for generated artifacts under agent-workspace; do not inline large heredocs or generated file bodies inside shell.exec. Use shell.exec only when a relevant active skill requires a command-line operation after any large files have been written. shell.exec runs from the Agent workspace; commands that generate files must write them under that workspace and must not write to home, Desktop, Downloads, system temp folders, hidden app metadata folders, or skill installation folders.",
+            "User request:\n{message}\n\nSkill context:\n{skill_context}\n\nAvailable tools: {}\n\nAgent workspace for generated files: {workspace}\n\nReturn JSON exactly like {{\"toolCalls\":[{{\"tool\":\"wiki.search\",\"query\":\"short query\"}}]}}. Use an empty array when no tool is needed. The skill context and tool list above are already available to the assistant; do not call wiki.search, source.search, graph.search, skill.read_file, workspace.write_file, or shell.exec merely to list, explain, or summarize the currently available skills, tools, modes, or agent capabilities. Use wiki.search for factual or topical retrieval. Prefer graph.search for relationships, dependencies, neighborhoods, backlinks, or connections between entities; pass concise entity or concept names instead of the full question. The planner may select both when the answer needs page content and graph structure. Use wiki.write_page only when the user explicitly asks to create a wiki page; include path under wiki/ ending in .md and full Markdown content. Existing pages are create-only by default; include allowOverwrite:true only when the user explicitly asks to overwrite or update an existing wiki page. Use skill.read_file for Markdown/reference files inside an active skill directory. Use workspace.write_file for generated artifacts under agent-workspace; do not inline large heredocs or generated file bodies inside shell.exec. Use shell.exec only when a relevant active skill requires a command-line operation after any large files have been written. shell.exec runs from the Agent workspace; commands that generate files must write them under that workspace and must not write to home, Desktop, Downloads, system temp folders, hidden app metadata folders, or skill installation folders.",
             available.join(", "),
         );
         let client = LlmClient::new(config.clone())?
@@ -2784,7 +2522,7 @@ fn should_plan_tools_with_model(
     if matches!(mode, AgentMode::Fast) {
         return false;
     }
-    let has_available_tool = tools.wiki || tools.web || tools.anytxt || skills_enabled;
+    let has_available_tool = tools.wiki || skills_enabled;
     !message.trim().is_empty() && has_available_tool
 }
 
@@ -2857,8 +2595,6 @@ fn is_agent_retrieval_tool(tool: &str) -> bool {
             | "wiki.read_page"
             | "source.search"
             | "graph.search"
-            | "web.search"
-            | "anytxt.search"
     )
 }
 
@@ -3044,12 +2780,6 @@ fn build_agent_loop_user(
             );
         }
     }
-    if request.tools.web && request.retrieval_mode != AgentRetrievalMode::Faithful {
-        out.push_str("- web.search: search external web sources.\n");
-    }
-    if request.tools.anytxt && request.retrieval_mode != AgentRetrievalMode::Faithful {
-        out.push_str("- anytxt.search: search files indexed by AnyTXT.\n");
-    }
     if !skills.is_empty() {
         out.push_str("- skill.read_file: read a Markdown/reference file from an active skill directory by relative path. Prefer this over shell.exec for skill references.\n");
         out.push_str("- user.ask: pause and show the user a structured form with single-choice, multi-choice, text, textarea, or confirmation fields when an active skill needs user input.\n");
@@ -3151,13 +2881,10 @@ fn is_agent_loop_tool_name(value: &str) -> bool {
             | "wiki.write_page"
             | "source.search"
             | "graph.search"
-            | "web.search"
-            | "anytxt.search"
             | "skill.read_file"
             | "workspace.write_file"
             | "workspace.append_file"
             | "shell.exec"
-            | "deep_research.run"
     ) || is_user_ask_tool(value)
 }
 
@@ -3408,7 +3135,7 @@ fn render_observations(observations: &[AgentObservation]) -> String {
 
 fn summarize_tool_input(tool: &str, input: &Value) -> Option<String> {
     match tool {
-        "wiki.search" | "source.search" | "graph.search" | "web.search" | "anytxt.search" => input
+        "wiki.search" | "source.search" | "graph.search" => input
             .get("query")
             .and_then(Value::as_str)
             .map(str::to_string),
@@ -3532,7 +3259,7 @@ fn require_tool_permission(
     if request.retrieval_mode == AgentRetrievalMode::Faithful
         && matches!(
             tool,
-            "wiki.search" | "wiki.read_page" | "graph.search" | "web.search" | "anytxt.search"
+            "wiki.search" | "wiki.read_page" | "graph.search"
         )
     {
         return Err(format!(
@@ -3567,22 +3294,6 @@ fn require_tool_permission(
         "workspace.write_file" | "workspace.append_file" => {
             permission_policy.require(AgentCapability::WriteWiki)
         }
-        "web.search" => {
-            if !request.tools.web {
-                return Err("web.search is disabled for this turn".to_string());
-            }
-            permission_policy.require(AgentCapability::Network)
-        }
-        "anytxt.search" => {
-            if !request.tools.anytxt {
-                return Err("anytxt.search is disabled for this turn".to_string());
-            }
-            permission_policy.require(AgentCapability::Network)
-        }
-        "deep_research.run" => Err(
-            "deep_research.run is not available in the loop executor; use web.search, anytxt.search, source.search, and wiki.search directly"
-                .to_string(),
-        ),
         "skill.read_file" => permission_policy.require(AgentCapability::ReadProject),
         "shell.exec" => permission_policy.require(AgentCapability::Process),
         other => Err(format!("Unknown Agent tool: {other}")),
@@ -3811,8 +3522,6 @@ fn planned_tool_queries(plan: &ModelToolPlan, fallback_query: &str) -> BTreeMap<
             "wiki.search"
                 | "source.search"
                 | "graph.search"
-                | "web.search"
-                | "anytxt.search"
                 | "wiki.write_page"
         ) {
             continue;
@@ -4046,8 +3755,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let response = runtime
             .run_once(AgentChatRequest {
@@ -4056,8 +3763,6 @@ mod tests {
                 mode: AgentMode::Standard,
                 tools: AgentToolOptions {
                     wiki: true,
-                    web: false,
-                    anytxt: false,
                 },
                 top_k: Some(3),
                 include_content: Some(false),
@@ -4087,8 +3792,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
 
         let error = runtime
@@ -4098,8 +3801,6 @@ mod tests {
                 mode: AgentMode::Standard,
                 tools: AgentToolOptions {
                     wiki: true,
-                    web: false,
-                    anytxt: false,
                 },
                 ..Default::default()
             })
@@ -4134,8 +3835,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let error = runtime
             .run_once(AgentChatRequest {
@@ -4144,8 +3843,6 @@ mod tests {
                 mode: AgentMode::Standard,
                 tools: AgentToolOptions {
                     wiki: true,
-                    web: false,
-                    anytxt: false,
                 },
                 top_k: Some(3),
                 include_content: Some(false),
@@ -4166,8 +3863,6 @@ mod tests {
         let runtime = AgentRuntime::new(
             "project-1",
             project.to_string_lossy(),
-            None,
-            None,
             None,
             None,
         );
@@ -4252,8 +3947,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let error = runtime
             .run_once(AgentChatRequest {
@@ -4262,8 +3955,6 @@ mod tests {
                 mode: AgentMode::LocalFirst,
                 tools: AgentToolOptions {
                     wiki: false,
-                    web: false,
-                    anytxt: false,
                 },
                 top_k: None,
                 include_content: None,
@@ -4296,8 +3987,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let error = runtime
             .run_once(AgentChatRequest {
@@ -4306,8 +3995,6 @@ mod tests {
                 mode: AgentMode::Fast,
                 tools: AgentToolOptions {
                     wiki: true,
-                    web: true,
-                    anytxt: false,
                 },
                 top_k: Some(3),
                 include_content: Some(false),
@@ -4322,55 +4009,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn optional_tool_failure_does_not_abort_turn() {
-        let project = temp_project("web-fail");
-        fs::write(
-            project
-                .join("wiki")
-                .join("concepts")
-                .join("external-update.md"),
-            "# External Update\n\nLocally indexed evidence for the latest external update.",
-        )
-        .unwrap();
-        let runtime = AgentRuntime::new(
-            "project-1",
-            project.to_string_lossy(),
-            None,
-            None,
-            None,
-            None,
-        );
-        let response = runtime
-            .run_once(AgentChatRequest {
-                message: "latest external update".to_string(),
-                session_id: None,
-                mode: AgentMode::Standard,
-                tools: AgentToolOptions {
-                    wiki: true,
-                    web: true,
-                    anytxt: false,
-                },
-                top_k: Some(3),
-                include_content: Some(false),
-                history: Vec::new(),
-                skills: Vec::new(),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        assert!(response.ok);
-        assert!(response
-            .tool_events
-            .iter()
-            .any(|event| event.tool == "web.search" && event.status == "failed"));
-        assert!(!response
-            .events
-            .iter()
-            .any(|event| matches!(event, AgentEvent::Error { .. })));
-    }
-
-    #[tokio::test]
     async fn run_once_can_include_raw_source_search_for_source_questions() {
         let project = temp_project("source");
         let source_dir = project.join("raw").join("sources");
@@ -4380,8 +4018,6 @@ mod tests {
         let runtime = AgentRuntime::new(
             "project-1",
             project.to_string_lossy(),
-            None,
-            None,
             None,
             None,
         );
@@ -4424,8 +4060,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let response = runtime
             .run_once(AgentChatRequest {
@@ -4457,8 +4091,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let captured_events = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink_events = Arc::clone(&captured_events);
@@ -4470,8 +4102,6 @@ mod tests {
                     mode: AgentMode::LocalFirst,
                     tools: AgentToolOptions {
                         wiki: false,
-                        web: false,
-                        anytxt: false,
                     },
                     top_k: None,
                     include_content: None,
@@ -4509,8 +4139,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let response = runtime
             .run_once(AgentChatRequest {
@@ -4540,12 +4168,12 @@ mod tests {
     #[test]
     fn parses_model_tool_plan_from_wrapped_json() {
         let plan = parse_model_tool_plan(
-            "```json\n{\"toolCalls\":[{\"tool\":\"web.search\",\"query\":\"llm wiki release\"}]}\n```",
+            "```json\n{\"toolCalls\":[{\"tool\":\"wiki.search\",\"query\":\"llm wiki release\"}]}\n```",
         )
         .unwrap();
         let queries = planned_tool_queries(&plan, "fallback");
         assert_eq!(
-            queries.get("web.search").map(String::as_str),
+            queries.get("wiki.search").map(String::as_str),
             Some("llm wiki release")
         );
     }
@@ -4623,8 +4251,6 @@ mod tests {
     fn model_tool_planning_is_available_for_enabled_tools_without_shape_heuristics() {
         let tools = AgentToolOptions {
             wiki: true,
-            web: false,
-            anytxt: false,
         };
         assert!(should_plan_tools_with_model(
             "你现在有哪些 skill 可以使用？",
@@ -4661,8 +4287,6 @@ mod tests {
             AgentMode::Standard,
             &AgentToolOptions {
                 wiki: false,
-                web: false,
-                anytxt: false,
             },
             false,
         ));
@@ -4783,7 +4407,6 @@ mod tests {
         let router = route_query(
             "quote the original",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         let built = build_agent_context(AgentContextInput {
             query: "quote the original",
@@ -4945,8 +4568,6 @@ mod tests {
         let runtime = AgentRuntime::new(
             "project-1",
             project.to_string_lossy(),
-            None,
-            None,
             None,
             None,
         );
@@ -5170,24 +4791,23 @@ mod tests {
     }
 
     #[test]
-    fn agent_loop_permission_respects_disabled_external_tools() {
-        let request = AgentChatRequest {
-            tools: AgentToolOptions {
-                wiki: true,
-                web: false,
-                anytxt: false,
-            },
+    fn agent_loop_permission_respects_disabled_tools() {
+        let policy = PermissionPolicy::api_default();
+        let enabled = AgentChatRequest {
+            tools: AgentToolOptions { wiki: true },
             ..AgentChatRequest::default()
         };
-        let policy = PermissionPolicy::api_default();
+        assert!(require_tool_permission("wiki.search", &enabled, &policy).is_ok());
 
-        assert!(require_tool_permission("wiki.search", &request, &policy).is_ok());
-        assert!(require_tool_permission("web.search", &request, &policy)
-            .unwrap_err()
-            .contains("disabled"));
-        assert!(require_tool_permission("anytxt.search", &request, &policy)
-            .unwrap_err()
-            .contains("disabled"));
+        let disabled = AgentChatRequest {
+            tools: AgentToolOptions { wiki: false },
+            ..AgentChatRequest::default()
+        };
+        for tool in ["wiki.search", "source.search", "graph.search", "wiki.write_page"] {
+            assert!(require_tool_permission(tool, &disabled, &policy)
+                .unwrap_err()
+                .contains("disabled"));
+        }
     }
 
     #[test]
@@ -5196,8 +4816,6 @@ mod tests {
             retrieval_mode: AgentRetrievalMode::Faithful,
             tools: AgentToolOptions {
                 wiki: true,
-                web: true,
-                anytxt: true,
             },
             ..AgentChatRequest::default()
         };
@@ -5208,8 +4826,6 @@ mod tests {
             "wiki.search",
             "wiki.read_page",
             "graph.search",
-            "web.search",
-            "anytxt.search",
         ] {
             assert!(require_tool_permission(tool, &request, &policy)
                 .unwrap_err()
@@ -5525,8 +5141,6 @@ mod tests {
             project.to_string_lossy(),
             None,
             None,
-            None,
-            None,
         );
         let mut references = Vec::new();
         let mut events = Vec::new();
@@ -5565,8 +5179,6 @@ mod tests {
         let runtime = AgentRuntime::new(
             "project-1",
             project.to_string_lossy(),
-            None,
-            None,
             None,
             None,
         );
@@ -5668,8 +5280,6 @@ mod tests {
     fn fallback_wiki_search_is_only_for_plain_non_skill_turns() {
         let tools = AgentToolOptions {
             wiki: true,
-            web: false,
-            anytxt: false,
         };
         assert!(should_fallback_wiki_search(true, &tools, true));
         assert!(!should_fallback_wiki_search(false, &tools, true));
@@ -5678,8 +5288,6 @@ mod tests {
             true,
             &AgentToolOptions {
                 wiki: false,
-                web: false,
-                anytxt: false,
             },
             true,
         ));

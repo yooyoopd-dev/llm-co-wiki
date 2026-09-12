@@ -5,7 +5,6 @@ pub mod codex_cli;
 pub mod opendataloader;
 pub mod gemini_cli;
 pub mod ebook;
-pub mod external_search;
 pub mod extract_images;
 pub mod file_history;
 pub mod file_sync;

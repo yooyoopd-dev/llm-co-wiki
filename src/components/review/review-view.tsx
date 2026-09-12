@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from "react"
-import { queueResearch, queueResearchBatch } from "@/lib/deep-research"
 import {
   AlertTriangle,
   Copy,
@@ -18,14 +17,11 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { writeFile, readFile, deleteFile } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
-import { hasConfiguredDeepResearchSources } from "@/lib/web-search"
 import { makeQueryFileName } from "@/lib/wiki-filename"
 import { createReviewPageDrafts } from "@/lib/review-create-page"
 import { cleanAssistantContentForWikiSave, titleFromCleanAssistantContent } from "@/lib/chat-save-to-wiki"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
-import { useResearchStore } from "@/stores/research-store"
-import { reviewResearchTopic, selectedResearchReviews } from "@/lib/review-batch-research"
 
 const typeConfig: Record<ReviewItem["type"], { icon: typeof AlertTriangle; color: string }> = {
   contradiction: { icon: AlertTriangle, color: "text-amber-500" },
@@ -48,7 +44,6 @@ export function ReviewView() {
   const [selectedReviewIds, setSelectedReviewIds] = useState<Set<string>>(() => new Set())
   const [workingReviewIds, setWorkingReviewIds] = useState<Set<string>>(() => new Set())
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({})
-  const researchTasks = useResearchStore((s) => s.tasks)
 
   const setReviewWorking = useCallback((id: string, working: boolean) => {
     setWorkingReviewIds((current) => {
@@ -90,24 +85,6 @@ export function ReviewView() {
   const handleResolve = useCallback(async (id: string, action: string) => {
     const pp = project ? normalizePath(project.path) : ""
     const item = items.find((i) => i.id === id)
-    // Deep Research — must be checked FIRST before any fuzzy matching
-    if (action === "__deep_research__" && project) {
-      const searchConfig = useWikiStore.getState().searchApiConfig
-      if (!hasConfiguredDeepResearchSources(searchConfig)) {
-        await appDialog.alert({ message: t("research.notConfigured") })
-        return
-      }
-      if (item) {
-        const llmConfig = useWikiStore.getState().llmConfig
-        // Use pre-generated search queries if available, otherwise fall back to title
-        const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(pp, topic, llmConfig, searchConfig, item.searchQueries, id)
-      } else {
-        resolveItem(id, action)
-      }
-      return
-    }
-
     if (action.startsWith("save:") && project) {
       // Decode and save the content to wiki
       try {
@@ -198,21 +175,10 @@ export function ReviewView() {
         setReviewWorking(id, false)
       }
     } else if (actionLooksLikeResearch(action) && project) {
-      // Actions with "research" trigger deep research, not just page creation
-      const searchConfig = useWikiStore.getState().searchApiConfig
-      if (!hasConfiguredDeepResearchSources(searchConfig)) {
-        // No research source — fall through to create a page instead
-        if (item) {
-          handleResolve(id, "__create_page__:" + action)
-        }
-        return
-      }
+      // A "research X" action turns into a wiki page from the review item's
+      // own content; there is no external search to run.
       if (item) {
-        const llmConfig = useWikiStore.getState().llmConfig
-        const topic = action.replace(/^research\s*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(pp, topic, llmConfig, searchConfig, undefined, id)
-      } else {
-        resolveItem(id, action)
+        handleResolve(id, "__create_page__:" + action)
       }
     } else if (
       (action.startsWith("__create_page__:") || actionLooksLikeCreate(action))
@@ -341,38 +307,6 @@ export function ReviewView() {
     setSelectedReviewIds(new Set())
   }, [dismissItem, selectedPendingIds])
 
-  const batchResearchItems = useMemo(
-    () => selectedResearchReviews(items, selectedReviewIds, researchTasks),
-    [items, researchTasks, selectedReviewIds],
-  )
-
-  const handleBatchResearch = useCallback(async () => {
-    if (!project) return
-    const eligibleItems = selectedResearchReviews(
-      items,
-      selectedReviewIds,
-      useResearchStore.getState().tasks,
-    )
-    if (eligibleItems.length === 0) return
-    const state = useWikiStore.getState()
-    if (!hasConfiguredDeepResearchSources(state.searchApiConfig)) {
-      await appDialog.alert({ message: t("research.notConfigured") })
-      return
-    }
-    queueResearchBatch(
-      normalizePath(project.path),
-      eligibleItems.map((item) => ({
-        topic: reviewResearchTopic(item),
-        searchQueries: item.searchQueries,
-        sourceReviewId: item.id,
-      })),
-      state.llmConfig,
-      state.searchApiConfig,
-    )
-    const queuedIds = new Set(eligibleItems.map((item) => item.id))
-    setSelectedReviewIds((current) => new Set([...current].filter((id) => !queuedIds.has(id))))
-  }, [appDialog, items, project, selectedReviewIds, t])
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -419,15 +353,6 @@ export function ReviewView() {
           <span className="text-muted-foreground">
             {t("review.selectedCount", { count: selectedPendingIds.length })}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            disabled={batchResearchItems.length === 0}
-            onClick={handleBatchResearch}
-          >
-            {t("review.researchSelected", { count: batchResearchItems.length })}
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -513,22 +438,6 @@ function ReviewCard({
   const { t } = useTranslation()
   const config = typeConfig[item.type]
   const Icon = config.icon
-  const researchTask = useResearchStore((state) => {
-    const matching = state.tasks.filter((task) => task.sourceReviewId === item.id)
-    return matching.find((task) => (
-      task.status === "queued" ||
-      task.status === "searching" ||
-      task.status === "synthesizing" ||
-      task.status === "saving"
-    )) ?? matching[matching.length - 1]
-  })
-  const researchRunning = researchTask !== undefined && (
-    researchTask.status === "queued" ||
-    researchTask.status === "searching" ||
-    researchTask.status === "synthesizing" ||
-    researchTask.status === "saving"
-  )
-
   return (
     <div
       className={`rounded-lg border p-3 text-sm transition-opacity ${
@@ -572,30 +481,14 @@ function ReviewCard({
               {t("review.actionFailed", { error })}
             </div>
           )}
-          {researchRunning && (
-            <div className="text-xs text-muted-foreground">
-              {t(`research.status.${researchTask.status}`)}
-            </div>
-          )}
           <div className="flex flex-wrap gap-1.5">
-          {(item.type === "suggestion" || item.type === "missing-page") && (
-            <Button
-              variant="default"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              disabled={researchRunning || working}
-              onClick={() => onResolve(item.id, "__deep_research__")}
-            >
-              🔍 {t("research.title")}
-            </Button>
-          )}
           {item.options.map((opt) => (
             <Button
               key={opt.action}
               variant="outline"
               size="sm"
               className="h-7 text-xs"
-              disabled={researchRunning || working}
+              disabled={working}
               onClick={() => onResolve(item.id, opt.action)}
             >
               {opt.label}
@@ -613,7 +506,7 @@ function ReviewCard({
   )
 }
 
-/** Detect if an action implies deep research (web search + LLM synthesis) */
+/** Detect if an action asks for research-style follow-up on an item. */
 function actionLooksLikeResearch(action: string): boolean {
   // Skip internal action identifiers
   if (action.startsWith("__")) return false

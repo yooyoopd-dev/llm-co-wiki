@@ -21,8 +21,6 @@ function sourceLabel(source: string, t: ReturnType<typeof useTranslation>["t"]) 
 export function SkillsSection() {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
-  const useWebSearch = useChatStore((s) => s.useWebSearch)
-  const useAnyTxtSearch = useChatStore((s) => s.useAnyTxtSearch)
   const agentMode = useChatStore((s) => s.agentMode)
   const retrievalMode = useChatStore((s) => s.retrievalMode)
   const selectedSkills = useChatStore((s) => s.selectedSkills)
@@ -55,14 +53,12 @@ export function SkillsSection() {
   const persist = useCallback(async (nextSelected: string[], nextDisabled: string[]) => {
     if (!project?.path) return
     await saveChatPreferences(project.path, {
-      useWebSearch,
-      useAnyTxtSearch,
       agentMode,
       retrievalMode,
       selectedSkills: nextSelected,
       disabledSkills: nextDisabled,
     })
-  }, [agentMode, project?.path, retrievalMode, useAnyTxtSearch, useWebSearch])
+  }, [agentMode, project?.path, retrievalMode])
 
   const scan = useCallback(async () => {
     if (!project?.path) {

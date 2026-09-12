@@ -141,8 +141,6 @@ test("chat posts agent request and parses references", async () => {
     topK: 4,
     includeContent: true,
     wiki: true,
-    web: false,
-    anytxt: true,
     skills: ["reviewer"],
   })
 
@@ -153,7 +151,7 @@ test("chat posts agent request and parses references", async () => {
     mode: "standard",
     topK: 4,
     includeContent: true,
-    tools: { wiki: true, web: false, anytxt: true },
+    tools: { wiki: true },
     skills: ["reviewer"],
   })
   assert.equal(response.sessionId, "s1")

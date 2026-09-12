@@ -66,7 +66,7 @@ export function MineruSection({ draft, setDraft }: Props) {
           {draft.pdfParser === "opendataloader"
             ? t("settings.sections.pdfParser.opendataloaderHint", {
                 defaultValue:
-                  "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires `npm i -g @opendataloader/pdf` and a JRE 11+ on PATH. Nothing is uploaded.",
+                  "Runs the OpenDataLoader PDF CLI locally: headings, tables and reading order survive into Markdown. Requires the CLI (`npm i -g @opendataloader/pdf` or `pip install opendataloader-pdf`) and a JRE 11+ on PATH. Nothing is uploaded.",
               })
             : t("settings.sections.pdfParser.preloadHint", {
                 defaultValue:

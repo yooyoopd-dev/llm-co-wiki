@@ -14,7 +14,6 @@ import { supportsImageInput } from "@/lib/llm-providers"
 import { executeIngestWrites } from "@/lib/ingest"
 import { deleteFile, openPathInProject, readFile } from "@/commands/fs"
 import { getFileName, isAbsolutePath, normalizePath } from "@/lib/path-utils"
-import { hasConfiguredAnyTxt } from "@/lib/anytxt-search"
 import type { ChatAgentEvent, ChatAgentFileChange, ChatAgentStep, ChatUserInputRequest } from "@/lib/chat-agent-types"
 import type { ChatMessage as LlmChatMessage, ContentBlock } from "@/lib/llm-client"
 import { FilePreview } from "@/components/editor/file-preview"
@@ -460,15 +459,11 @@ export function ChatPanel() {
   const createConversation = useChatStore((s) => s.createConversation)
   const removeLastAssistantMessage = useChatStore((s) => s.removeLastAssistantMessage)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
-  const useWebSearch = useChatStore((s) => s.useWebSearch)
-  const useAnyTxtSearch = useChatStore((s) => s.useAnyTxtSearch)
   const agentMode = useChatStore((s) => s.agentMode)
   const retrievalMode = useChatStore((s) => s.retrievalMode)
   const selectedSkills = useChatStore((s) => s.selectedSkills)
   const selectedContextFiles = useChatStore((s) => s.selectedContextFiles)
   const disabledSkills = useChatStore((s) => s.disabledSkills)
-  const setUseWebSearch = useChatStore((s) => s.setUseWebSearch)
-  const setUseAnyTxtSearch = useChatStore((s) => s.setUseAnyTxtSearch)
   const setAgentMode = useChatStore((s) => s.setAgentMode)
   const setRetrievalMode = useChatStore((s) => s.setRetrievalMode)
   const setSelectedSkills = useChatStore((s) => s.setSelectedSkills)
@@ -491,8 +486,6 @@ export function ChatPanel() {
     () => resolveTaskLlmConfig("chat", baseLlmConfig, providerConfigs, taskModelRouting, projectLlmOverride, customLlmPresets),
     [baseLlmConfig, providerConfigs, taskModelRouting, projectLlmOverride, customLlmPresets],
   )
-  const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
-  const anyTxtAvailable = hasConfiguredAnyTxt(searchApiConfig.anyTxt)
   const imageInputAvailable = supportsImageInput(llmConfig)
   const availableContextFiles = useMemo(() => {
     if (!project) return []
@@ -724,8 +717,6 @@ export function ChatPanel() {
       options?: InternalChatSendOptions,
     ) => {
       const sendOptions = options ?? {
-        useWebSearch: useChatStore.getState().useWebSearch,
-        useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
         agentMode: useChatStore.getState().agentMode,
         retrievalMode: useChatStore.getState().retrievalMode,
         skills: useChatStore.getState().selectedSkills,
@@ -995,11 +986,7 @@ export function ChatPanel() {
                 mode: sendOptions.agentMode,
                 retrievalMode: sendOptions.retrievalMode,
                 stream: true,
-                tools: {
-                  wiki: true,
-                  web: sendOptions.useWebSearch,
-                  anytxt: sendOptions.useAnyTxtSearch,
-                },
+                tools: { wiki: true },
                 topK: sendOptions.agentMode === "deep" ? 8 : 5,
                 includeContent: sendOptions.agentMode === "deep",
                 history: activeConvMessages,
@@ -1073,11 +1060,7 @@ export function ChatPanel() {
             persistSession: false,
             mode: sendOptions.agentMode,
             retrievalMode: sendOptions.retrievalMode,
-            tools: {
-              wiki: true,
-              web: sendOptions.useWebSearch,
-              anytxt: sendOptions.useAnyTxtSearch,
-            },
+            tools: { wiki: true },
             topK: sendOptions.agentMode === "deep" ? 8 : 5,
             includeContent: sendOptions.agentMode === "deep",
             skills: requestSkills,
@@ -1243,7 +1226,7 @@ export function ChatPanel() {
         activeRunIdRef.current = null
       }
     },
-    [project, llmConfig, searchApiConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
+    [project, llmConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
   )
 
   const handleStop = useCallback(() => {
@@ -1352,8 +1335,6 @@ export function ChatPanel() {
     setStreaming(false)
     try {
       await handleSend(resumeMessage, priorUser.images ?? [], {
-        useWebSearch: useChatStore.getState().useWebSearch,
-        useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
         agentMode: useChatStore.getState().agentMode,
         retrievalMode: useChatStore.getState().retrievalMode,
         skills: useChatStore.getState().selectedSkills,
@@ -1384,8 +1365,6 @@ export function ChatPanel() {
       "Continue the previous task using these answers. Do not ask the same questions again unless required information is still missing.",
     ].join("\n")
     handleSend(resumeMessage, [], {
-      useWebSearch: useChatStore.getState().useWebSearch,
-      useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
       agentMode: useChatStore.getState().agentMode,
       retrievalMode: useChatStore.getState().retrievalMode,
       skills: useChatStore.getState().selectedSkills,
@@ -1478,21 +1457,16 @@ export function ChatPanel() {
           onSend={handleSend}
           onStop={handleStop}
           isStreaming={activeStreaming}
-          useWebSearch={useWebSearch}
-          useAnyTxtSearch={useAnyTxtSearch}
           agentMode={agentMode}
           retrievalMode={retrievalMode}
           availableSkills={availableSkills}
           selectedSkills={selectedSkills}
           availableContextFiles={availableContextFiles}
           selectedContextFiles={selectedContextFiles}
-          onUseWebSearchChange={setUseWebSearch}
-          onUseAnyTxtSearchChange={setUseAnyTxtSearch}
           onAgentModeChange={setAgentMode}
           onRetrievalModeChange={setRetrievalMode}
           onSelectedSkillsChange={setSelectedSkills}
           onSelectedContextFilesChange={setSelectedContextFiles}
-          anyTxtAvailable={anyTxtAvailable}
           imageInputAvailable={imageInputAvailable}
           placeholder={
             mode === "ingest"

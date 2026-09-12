@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::types::{AgentMode, AgentToolOptions};
+use super::types::AgentMode;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -23,13 +23,11 @@ pub struct RouterDecision {
     // the model planner, with a runtime fallback only when the planner is not
     // available.
     pub should_search_wiki: bool,
-    pub should_hint_web: bool,
-    pub should_hint_anytxt: bool,
     pub should_include_sources: bool,
     pub rationale: String,
 }
 
-pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> RouterDecision {
+pub fn route_query(message: &str, mode: AgentMode) -> RouterDecision {
     let lower = message.to_lowercase();
     let trimmed = message.trim();
     let explicit_web = contains_any(
@@ -92,8 +90,6 @@ pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> 
     RouterDecision {
         intent,
         should_search_wiki,
-        should_hint_web: tools.web,
-        should_hint_anytxt: tools.anytxt,
         should_include_sources: explicit_raw || matches!(mode, AgentMode::Deep),
         rationale: match intent {
             QueryIntent::NeedsExternalSearch => {
@@ -131,15 +127,9 @@ mod tests {
         let decision = route_query(
             "Search the web for latest policy updates",
             AgentMode::Standard,
-            &AgentToolOptions {
-                wiki: true,
-                web: true,
-                anytxt: false,
-            },
         );
         assert_eq!(decision.intent, QueryIntent::NeedsExternalSearch);
         assert!(!decision.should_search_wiki);
-        assert!(decision.should_hint_web);
     }
 
     #[test]
@@ -147,7 +137,6 @@ mod tests {
         let decision = route_query(
             "你现在有哪些 skill 可以使用？",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         assert_eq!(decision.intent, QueryIntent::Ambiguous);
         assert!(!decision.should_search_wiki);

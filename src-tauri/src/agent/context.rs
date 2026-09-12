@@ -72,21 +72,13 @@ fn build_system_context(
         "Answer using the current project context, available tools, and cited references.",
         "If evidence is insufficient, say what is missing instead of inventing facts.",
         "When using references, mention the relevant page paths naturally.",
-        "Do not claim that internet or local-source search is unavailable when those tools are enabled; use the provided tool context and tool hints.",
+        "Do not claim that project search is unavailable when those tools are enabled; use the provided tool context and tool hints.",
     ]
     .join("\n");
 
     out.push_str("\n\nTool policy:\n");
     out.push_str("- wiki.search retrieves pages for factual or topical questions.\n");
     out.push_str("- graph.search retrieves relationships, neighbors, backlinks, dependencies, and connections between project entities. Prefer it when the requested answer is about how concepts or entities relate, and use concise entity names rather than the full natural-language question.\n");
-    if router.should_hint_web {
-        out.push_str("- web.search is available when current or external information is useful.\n");
-    }
-    if router.should_hint_anytxt {
-        out.push_str(
-            "- anytxt.search is available for local or remote file content indexed by AnyTXT.\n",
-        );
-    }
     out.push_str(&format!(
         "- Router hint: {:?}. {}\n",
         router.intent, router.rationale
@@ -378,7 +370,7 @@ mod tests {
     use super::*;
     use crate::agent::router::route_query;
     use crate::agent::types::{
-        AgentKnowledgeContext, AgentMode, AgentReference, AgentToolOptions, AgentVersionSummary,
+        AgentKnowledgeContext, AgentMode, AgentReference, AgentVersionSummary,
     };
 
     #[test]
@@ -388,7 +380,7 @@ mod tests {
             schema: None,
             agent_workspace: "/tmp/project/agent-workspace".to_string(),
         };
-        let router = route_query("alpha", AgentMode::Standard, &AgentToolOptions::default());
+        let router = route_query("alpha", AgentMode::Standard);
         let references = vec![AgentReference {
             title: "Alpha".to_string(),
             path: "wiki/alpha.md".to_string(),
@@ -466,7 +458,6 @@ mod tests {
         let router = route_query(
             "real request",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         let files = vec![(
             "wiki/page.md".to_string(),
@@ -498,7 +489,6 @@ mod tests {
         let router = route_query(
             "latest policy",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         let ctx = build_agent_context(AgentContextInput {
             query: "latest policy",
@@ -529,7 +519,6 @@ mod tests {
         let router = route_query(
             "draw an article image",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         let skills = vec![AgentSkill {
             name: "article-illustrator".to_string(),
@@ -608,7 +597,6 @@ mod tests {
         let router = route_query(
             "使用这些技能",
             AgentMode::Standard,
-            &AgentToolOptions::default(),
         );
         let skills = (0..4)
             .map(|idx| AgentSkill {
