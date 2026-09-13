@@ -99,6 +99,16 @@ export function createClaudeCodeStreamParser() {
   }
 }
 
+/**
+ * True for the `{"type":"system","subtype":"hook_started"|"hook_response",...}`
+ * events claude emits for each hook it runs. They carry the hook's entire
+ * stdout, so they are both useless as a diagnostic and large enough to
+ * crowd out the events that matter.
+ */
+export function isHookNoise(line: string): boolean {
+  return /"subtype"\s*:\s*"hook_/.test(line)
+}
+
 // Tauri's `invoke` typing requires the payload object to satisfy
 // `Record<string, unknown>` (an index signature). Plain interfaces
 // don't provide one, so we use a `type` alias with the explicit
@@ -169,11 +179,22 @@ export async function streamClaudeCodeCli(
   const unparsedLines: string[] = []
   let unparsedSize = 0
   function captureUnparsed(line: string) {
-    if (unparsedSize >= UNPARSED_BUFFER_CAP) return
     const trimmed = line.trim()
     if (trimmed.length === 0) return
+    // Hook plumbing echoes the full stdout of every SessionStart /
+    // PreToolUse hook back on this channel — a single line can be
+    // kilobytes when the user has hooks or plugins in ~/.claude. It
+    // never explains a failure, and keeping it used to exhaust the
+    // buffer before the `result` event carrying the real error
+    // arrived, leaving the user with hook text and no diagnosis.
+    if (isHookNoise(trimmed)) return
     unparsedLines.push(line)
     unparsedSize += line.length + 1
+    // Keep the tail, not the head: the last lines before exit are the
+    // ones that say why it exited.
+    while (unparsedSize > UNPARSED_BUFFER_CAP && unparsedLines.length > 1) {
+      unparsedSize -= (unparsedLines.shift()?.length ?? 0) + 1
+    }
   }
 
   const cleanup = () => {

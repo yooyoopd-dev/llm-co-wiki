@@ -386,6 +386,54 @@ describe("streamClaudeCodeCli", () => {
     )
   })
 
+  it("drops hook chatter and keeps the last diagnostic line on a non-zero exit", async () => {
+    const callbacks = {
+      onToken: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    }
+
+    const stream = streamClaudeCodeCli(
+      {
+        provider: "claude-code",
+        apiKey: "",
+        model: "claude-sonnet-4-6",
+        ollamaUrl: "",
+        customEndpoint: "",
+        maxContextSize: 200000,
+      },
+      [{ role: "user", content: "Analyze this source." }],
+      callbacks,
+    )
+
+    await vi.waitFor(() => {
+      expect(tauriMocks.invoke).toHaveBeenCalledTimes(1)
+    })
+
+    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
+    tauriMocks.emit(
+      `claude-cli:${payload.streamId}`,
+      JSON.stringify({
+        type: "system",
+        subtype: "hook_response",
+        hook_name: "SessionStart:startup",
+        output: "x".repeat(8000),
+      }),
+    )
+    tauriMocks.emit(
+      `claude-cli:${payload.streamId}`,
+      JSON.stringify({ type: "result", is_error: true, result: "Credit balance is too low" }),
+    )
+    tauriMocks.emit(`claude-cli:${payload.streamId}:done`, { code: 1, stderr: "" })
+
+    await stream
+
+    expect(callbacks.onError).toHaveBeenCalledTimes(1)
+    const message = (callbacks.onError.mock.calls[0]?.[0] as Error).message
+    expect(message).toContain("Credit balance is too low")
+    expect(message).not.toContain("hook_response")
+  })
+
   it("does not spawn when the signal is already aborted", async () => {
     const controller = new AbortController()
     controller.abort()
