@@ -1,0 +1,89 @@
+name: Dev Build (no release)
+
+# Debug/QA builds. Produces the same Windows bundles as Build & Release,
+# but they land as workflow artifacts: no tag, no release, no version bump
+# required, and older releases are never pruned. Run it from the Actions
+# tab and pick any branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows bundles
+    runs-on: windows-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: "false"
+      CARGO_NET_RETRY: "5"
+      CARGO_HTTP_TIMEOUT: "60"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Prepare MCP server resources
+        run: |
+          npm --prefix mcp-server ci
+          npm run mcp:build
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package Windows portable zip
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          .github/scripts/package-windows-portable.ps1 -Version $version
+
+      - name: Collect bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist-dev
+          files=(
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            dist-portable/*.zip
+          )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::Build produced no installer or portable zip."
+            exit 1
+          fi
+          cp "${files[@]}" dist-dev/
+          ls -la dist-dev
+
+      # Artifact names may not contain "/", so the branch is not part of it;
+      # the commit sha identifies the build and the run page shows the branch.
+      - name: Upload bundles as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-build-${{ github.sha }}
+          path: dist-dev/*
+          retention-days: 14
+          if-no-files-found: error
