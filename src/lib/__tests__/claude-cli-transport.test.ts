@@ -509,6 +509,20 @@ describe("buildExitError", () => {
     expect(msg).toContain("token revoked")
   })
 
+  it("surfaces the message from a stream-json result event, not its counters", () => {
+    const stdout = JSON.stringify({
+      type: "result",
+      is_error: true,
+      usage: { input_tokens: 0, output_tokens: 0 },
+      terminal_reason: "api_error",
+      result: "Failed to authenticate: OAuth session expired and could not be refreshed",
+    })
+    const msg = buildExitError(1, "", stdout)
+    expect(msg).toMatch(/not authenticated/i)
+    expect(msg).toContain("OAuth session expired")
+    expect(msg).not.toContain("input_tokens")
+  })
+
   it("prefers stderr over unparsed stdout when both are present", () => {
     const msg = buildExitError(1, "real stderr here", "unrelated stdout")
     expect(msg).toContain("real stderr here")
