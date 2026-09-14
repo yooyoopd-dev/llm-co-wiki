@@ -205,6 +205,7 @@
     "sourceCount_plural": "{{count}} sources"
   },
   "chat": {
+    "error": { "details": "Details" },
     "selectionEdit": {
       "title": "Proposed selection edit",
       "reviewHint": "Review before writing",

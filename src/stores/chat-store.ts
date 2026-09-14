@@ -34,6 +34,16 @@ export interface MessageReference {
   graphRelations?: string[]
 }
 
+/** Failure detail attached to an assistant turn so the chat can show the
+ *  full diagnostic instead of a single truncated line. */
+export interface ChatErrorDetail {
+  message: string
+  /** Stack, cause chain, or raw provider payload — whatever the throw carried. */
+  detail?: string
+  /** Run metadata (provider, model, mode, run id) that narrows down the failure. */
+  context?: Record<string, string>
+}
+
 export interface DisplayMessage {
   id: string
   role: "user" | "assistant" | "system"
@@ -46,6 +56,7 @@ export interface DisplayMessage {
   userInputRequest?: ChatUserInputRequest  // dynamic schema-driven form requested by backend Agent
   images?: MessageImage[]  // images attached to a user message (vision input)
   contextFiles?: string[]  // absolute project files explicitly attached to this user turn
+  error?: ChatErrorDetail  // set when the turn failed; rendered as an expandable error card
 }
 
 interface ChatState {
@@ -78,6 +89,7 @@ interface ChatState {
   appendStreamToken: (token: string) => void
   finalizeStream: (content: string, references?: MessageReference[], agentSteps?: ChatAgentStep[], userInputRequest?: ChatUserInputRequest, agentFileChanges?: ChatAgentFileChange[]) => void
   finalizeStreamForConversation: (conversationId: string, content: string, references?: MessageReference[], agentSteps?: ChatAgentStep[], userInputRequest?: ChatUserInputRequest, agentFileChanges?: ChatAgentFileChange[]) => void
+  finalizeStreamErrorForConversation: (conversationId: string, error: ChatErrorDetail) => void
   setMode: (mode: ChatState["mode"]) => void
   setIngestSource: (path: string | null) => void
   clearMessages: () => void
@@ -284,6 +296,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentSteps,
         ...(agentFileChanges && agentFileChanges.length > 0 ? { agentFileChanges } : {}),
         ...(userInputRequest ? { userInputRequest } : {}),
+      }
+
+      return {
+        isStreaming: false,
+        streamingContent: "",
+        messages: [...state.messages, newMessage],
+        conversations: conversations.map((c) =>
+          c.id === conversationId
+            ? { ...c, updatedAt: Date.now() }
+            : c
+        ),
+      }
+    }),
+
+  finalizeStreamErrorForConversation: (conversationId, error) =>
+    set((state) => {
+      const { conversations } = state
+      if (!conversations.some((conversation) => conversation.id === conversationId)) {
+        return {
+          isStreaming: false,
+          streamingContent: "",
+        }
+      }
+
+      const newMessage: DisplayMessage = {
+        id: nextId(),
+        role: "assistant" as const,
+        content: error.message,
+        timestamp: Date.now(),
+        conversationId,
+        error,
       }
 
       return {

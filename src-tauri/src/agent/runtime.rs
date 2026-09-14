@@ -1004,7 +1004,7 @@ impl AgentRuntime {
                 }
             }
         } else {
-            if references.is_empty() {
+            if references.is_empty() && !request.retrieval_only {
                 return Err(
                     "Backend Agent LLM is not configured or the selected Chat model is unavailable. Check Settings > Models and try again."
                         .to_string(),
@@ -3966,6 +3966,24 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("Chat model is unavailable"));
+    }
+
+    #[tokio::test]
+    async fn retrieval_only_requests_survive_an_empty_retrieval_without_a_generator() {
+        let project = temp_project("retrieval-only");
+        let runtime = AgentRuntime::new("project-1", project.to_string_lossy(), None, None);
+        let response = runtime
+            .run_once(AgentChatRequest {
+                message: "a follow-up question that matches nothing".to_string(),
+                mode: AgentMode::LocalFirst,
+                retrieval_only: true,
+                ..Default::default()
+            })
+            .await
+            .expect("retrieval-only turns must not fail on an empty retrieval");
+
+        assert!(response.references.is_empty());
+        assert!(response.message.contains("did not find matching wiki pages"));
     }
 
     #[tokio::test]
