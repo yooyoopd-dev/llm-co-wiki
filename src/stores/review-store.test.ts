@@ -358,3 +358,60 @@ describe("review-store resolveItem / dismissItem / clearResolved", () => {
     expect(remaining[0].title).toBe("B")
   })
 })
+
+describe("setDecision", () => {
+  const decision = {
+    kind: "custom" as const,
+    instruction: "add the 2024 numbers",
+    targets: ["wiki/concepts/a.md"],
+    allowCreate: false,
+    status: "proposed" as const,
+  }
+
+  it("stores a decision on one item and leaves the others alone", () => {
+    useReviewStore.getState().addItems([makeInput({ title: "A" }), makeInput({ title: "B" })])
+    const [a, b] = useReviewStore.getState().items
+    useReviewStore.getState().setDecision(a.id, decision)
+    const items = useReviewStore.getState().items
+    expect(items.find((i) => i.id === a.id)?.decision).toEqual(decision)
+    expect(items.find((i) => i.id === b.id)?.decision).toBeUndefined()
+  })
+
+  it("clears the decision when given undefined", () => {
+    useReviewStore.getState().addItem(makeInput())
+    const id = useReviewStore.getState().items[0].id
+    useReviewStore.getState().setDecision(id, decision)
+    useReviewStore.getState().setDecision(id, undefined)
+    expect("decision" in useReviewStore.getState().items[0]).toBe(false)
+  })
+
+  it("survives a re-ingest of the same review item", () => {
+    // addItems merges an incoming duplicate into the stored item; a
+    // regenerated item carries no decision and must not erase one.
+    useReviewStore.getState().addItem(makeInput())
+    const id = useReviewStore.getState().items[0].id
+    useReviewStore.getState().setDecision(id, decision)
+    useReviewStore.getState().addItems([makeInput({ description: "regenerated" })])
+    const items = useReviewStore.getState().items
+    expect(items).toHaveLength(1)
+    expect(items[0].decision).toEqual(decision)
+  })
+
+  it("survives the id migration in setItems", () => {
+    const stored: ReviewItem = {
+      ...makeInput(),
+      id: "review-7",
+      resolved: false,
+      createdAt: 1,
+      decision,
+    }
+    useReviewStore.getState().setItems([stored])
+    expect(useReviewStore.getState().items[0].decision).toEqual(decision)
+  })
+
+  it("loads items written before decisions existed", () => {
+    const legacy: ReviewItem = { ...makeInput(), id: "review-1", resolved: false, createdAt: 1 }
+    useReviewStore.getState().setItems([legacy])
+    expect(useReviewStore.getState().items[0].decision).toBeUndefined()
+  })
+})

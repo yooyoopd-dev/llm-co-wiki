@@ -41,7 +41,7 @@ const UNION_FIELDS = ["sources", "tags", "related"] as const
  *   - created: a one-time stamp; an "updated" stamp is computed
  *     separately.
  */
-const LOCKED_FIELDS = ["type", "title", "created"] as const
+export const LOCKED_FIELDS = ["type", "title", "created"] as const
 
 /**
  * Body length safety threshold. If the LLM's merged body is shorter
@@ -50,7 +50,7 @@ const LOCKED_FIELDS = ["type", "title", "created"] as const
  * legitimately deduplicating. 0.7 allows for ~30% legitimate dedup
  * compression while catching obvious truncation / lazy summaries.
  */
-const BODY_SHRINK_THRESHOLD = 0.7
+export const BODY_SHRINK_THRESHOLD = 0.7
 
 export interface MergeFn {
   /**
@@ -347,7 +347,7 @@ function defaultToday(): string {
  * pass plain identifiers and ISO dates so this hasn't been an
  * issue.
  */
-function setFrontmatterScalar(
+export function setFrontmatterScalar(
   content: string,
   fieldName: string,
   value: string,

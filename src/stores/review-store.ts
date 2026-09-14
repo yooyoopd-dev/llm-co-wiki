@@ -6,6 +6,36 @@ export interface ReviewOption {
   action: string // identifier for the action
 }
 
+/**
+ * What the human decided about a review item.
+ *
+ *   keep             — leave the wiki alone; no LLM call, no write.
+ *   apply-suggestion — apply the review item's own suggestion.
+ *   custom           — apply the human's free-form instruction.
+ *
+ * `keep` resolves the item on the spot. The other two drive the
+ * propose → diff → apply pipeline in `review-apply.ts`.
+ */
+export type ReviewDecisionKind = "keep" | "apply-suggestion" | "custom"
+
+export type ReviewDecisionStatus = "draft" | "proposed" | "applied" | "failed"
+
+export interface ReviewDecision {
+  kind: ReviewDecisionKind
+  /** Prompt text the human typed (empty for `keep`). */
+  instruction: string
+  /** Wiki-relative page paths the edit may touch (e.g. `wiki/concepts/a.md`). */
+  targets: string[]
+  /** Whether the model may write pages outside `targets`. */
+  allowCreate: boolean
+  status: ReviewDecisionStatus
+  /** Set once a proposal exists on disk under `.llm-wiki/review-proposals/`. */
+  hasProposal?: boolean
+  appliedPaths?: string[]
+  appliedAt?: number
+  error?: string
+}
+
 export interface ReviewItem {
   id: string
   type: "contradiction" | "duplicate" | "missing-page" | "confirm" | "suggestion"
@@ -17,6 +47,12 @@ export interface ReviewItem {
   options: ReviewOption[]
   resolved: boolean
   resolvedAction?: string
+  /**
+   * Absent on every item written before the decision workflow existed,
+   * and on any item the user has not opened the decision panel for.
+   * Consumers must treat "no decision" as "not started".
+   */
+  decision?: ReviewDecision
   createdAt: number
 }
 
@@ -26,6 +62,7 @@ interface ReviewState {
   addItems: (items: Omit<ReviewItem, "id" | "resolved" | "createdAt">[]) => void
   setItems: (items: ReviewItem[]) => void
   resolveItem: (id: string, action: string) => void
+  setDecision: (id: string, decision: ReviewDecision | undefined) => void
   dismissItem: (id: string) => void
   clearResolved: () => void
 }
@@ -88,6 +125,9 @@ function mergeReviewItems(a: ReviewItem, b: ReviewItem): ReviewItem {
     affectedPages: unionField(a.affectedPages, b.affectedPages),
     searchQueries: unionField(a.searchQueries, b.searchQueries),
     options: mergeOptions(a.options, b.options),
+    // Whichever side recorded a human decision keeps it; a regenerated
+    // item never carries one, so this only ever rescues a real decision.
+    decision: a.decision ?? b.decision,
     createdAt: Math.min(a.createdAt, b.createdAt),
   }
 }
@@ -168,6 +208,18 @@ export const useReviewStore = create<ReviewState>((set) => ({
       items: state.items.map((item) =>
         item.id === id ? { ...item, resolved: true, resolvedAction: action } : item
       ),
+    })),
+
+  setDecision: (id, decision) =>
+    set((state) => ({
+      items: state.items.map((item) => {
+        if (item.id !== id) return item
+        if (!decision) {
+          const { decision: _dropped, ...rest } = item
+          return rest
+        }
+        return { ...item, decision }
+      }),
     })),
 
   dismissItem: (id) =>

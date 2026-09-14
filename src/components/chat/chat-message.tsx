@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react"
+import { Fragment, memo, useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import ReactMarkdown from "react-markdown"
@@ -10,13 +10,13 @@ import {
   Bot, User, FileText, BookmarkPlus, ChevronDown, ChevronRight, RefreshCw, Copy, Check,
   Users, Lightbulb, BookOpen, HelpCircle, GitMerge, BarChart3, Layout, Globe,
   TrendingUp, Target, Sparkles, Image as ImageIcon, FileSearch, Terminal,
-  ListTree,
+  ListTree, AlertTriangle,
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile, writeFile, listDirectory } from "@/commands/fs"
 import { lastQueryPages } from "@/components/chat/chat-panel"
-import type { DisplayMessage, MessageReference } from "@/stores/chat-store"
+import type { ChatErrorDetail, DisplayMessage, MessageReference } from "@/stores/chat-store"
 import type { FileNode } from "@/types/wiki"
 
 import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
@@ -164,7 +164,8 @@ function ChatMessageImpl({
             onApproveShellCommand={(command) => onApproveShellCommand?.(command, message.id)}
           />
         )}
-        {(!isUser || message.content) && (
+        {isAssistant && message.error && <ErrorCard error={message.error} />}
+        {(!isUser || message.content) && !(isAssistant && message.error) && (
           <div
             className={`rounded-lg px-3 py-2 text-sm ${
               isUser
@@ -1416,6 +1417,64 @@ function agentStageIcon(stage: ChatAgentEventStage) {
     default:
       return Sparkles
   }
+}
+
+/**
+ * A failed turn. The headline stays short; the stack, cause chain and run
+ * metadata sit behind a toggle so the full diagnostic is always recoverable
+ * (and copyable) from the chat itself.
+ */
+function ErrorCard({ error }: { error: ChatErrorDetail }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const contextEntries = Object.entries(error.context ?? {}).filter(([, value]) => Boolean(value))
+  const hasDetail = Boolean(error.detail) || contextEntries.length > 0
+  const fullText = [
+    error.message,
+    ...contextEntries.map(([key, value]) => `${key}: ${value}`),
+    error.detail ?? "",
+  ].filter(Boolean).join("\n")
+
+  return (
+    <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <p dir="auto" className="whitespace-pre-wrap break-words text-foreground">{error.message}</p>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1">
+        {hasDetail && (
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {t("chat.error.details", { defaultValue: "Details" })}
+          </button>
+        )}
+        <CopyButton content={fullText} />
+      </div>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {contextEntries.length > 0 && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+              {contextEntries.map(([key, value]) => (
+                <Fragment key={key}>
+                  <dt className="font-medium">{key}</dt>
+                  <dd className="break-all">{value}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          )}
+          {error.detail && (
+            <pre className="max-h-64 overflow-auto rounded bg-background/60 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-words">
+              {error.detail}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MarkdownContent({ content }: { content: string }) {

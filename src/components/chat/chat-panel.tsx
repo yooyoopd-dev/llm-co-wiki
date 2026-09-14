@@ -21,6 +21,7 @@ import { WikiReader } from "@/components/editor/wiki-reader"
 import { FrontmatterPanel } from "@/components/editor/frontmatter-panel"
 import { parseFrontmatter } from "@/lib/frontmatter"
 import { getFileCategory, getFileExtension, isTextReadable } from "@/lib/file-types"
+import { describeError } from "@/lib/error-detail"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { summarizeAgentFileChange } from "@/lib/agent-file-activity"
 import { ReferenceKnowledgeGraph } from "@/components/chat/reference-knowledge-graph"
@@ -456,6 +457,7 @@ export function ChatPanel() {
   const setStreaming = useChatStore((s) => s.setStreaming)
   const appendStreamToken = useChatStore((s) => s.appendStreamToken)
   const finalizeStreamForConversation = useChatStore((s) => s.finalizeStreamForConversation)
+  const finalizeStreamErrorForConversation = useChatStore((s) => s.finalizeStreamErrorForConversation)
   const createConversation = useChatStore((s) => s.createConversation)
   const removeLastAssistantMessage = useChatStore((s) => s.removeLastAssistantMessage)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
@@ -1058,6 +1060,10 @@ export function ChatPanel() {
             sessionId: convId,
             runId: backendRunId,
             persistSession: false,
+            // CLI transports generate the answer in the frontend; this call
+            // only collects wiki context, so an empty retrieval is a valid
+            // result rather than a missing-LLM failure.
+            retrievalOnly: true,
             mode: sendOptions.agentMode,
             retrievalMode: sendOptions.retrievalMode,
             tools: { wiki: true },
@@ -1216,8 +1222,18 @@ export function ChatPanel() {
             activeRunIdRef.current = null
             return
           }
-          const message = err instanceof Error ? err.message : String(err)
-          finalizeStreamForConversation(convId, `Error: ${message}`, undefined)
+          const described = describeError(err)
+          finalizeStreamErrorForConversation(convId, {
+            message: described.message,
+            detail: described.detail,
+            context: {
+              provider: llmConfig.provider,
+              model: llmConfig.model,
+              agentMode: sendOptions.agentMode,
+              retrievalMode: sendOptions.retrievalMode,
+              runId: backendRunId,
+            },
+          })
           setAgentEvents([])
           setStreamingConversationId(null)
         }
@@ -1226,7 +1242,7 @@ export function ChatPanel() {
         activeRunIdRef.current = null
       }
     },
-    [project, llmConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
+    [project, llmConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, finalizeStreamErrorForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
   )
 
   const handleStop = useCallback(() => {

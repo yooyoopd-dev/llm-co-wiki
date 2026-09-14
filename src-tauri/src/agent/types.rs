@@ -129,6 +129,12 @@ pub struct AgentChatRequest {
     pub stream: Option<bool>,
     #[serde(default = "default_true")]
     pub persist_session: bool,
+    // Set by callers that only want retrieval: the CLI-transport chat path
+    // runs generation itself and calls the runtime purely to collect wiki
+    // context. Without this the runtime treats "no HTTP LLM and no hits" as a
+    // misconfiguration and fails the turn.
+    #[serde(default)]
+    pub retrieval_only: bool,
 }
 
 impl Default for AgentChatRequest {
@@ -152,6 +158,7 @@ impl Default for AgentChatRequest {
             images: Vec::new(),
             stream: None,
             persist_session: true,
+            retrieval_only: false,
         }
     }
 }

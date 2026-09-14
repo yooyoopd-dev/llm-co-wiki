@@ -324,6 +324,26 @@ export async function streamClaudeCodeCli(
 }
 
 /**
+ * Pull the human-readable message out of the last stream-json `result`
+ * event in the captured stdout, if there is one. Returns "" when no such
+ * event was captured, leaving the raw-stdout fallback in charge.
+ */
+function extractResultText(stdout: string): string {
+  const lines = stdout.trim().split("\n")
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const evt = JSON.parse(lines[i]) as Record<string, unknown>
+      if (evt?.type === "result" && typeof evt.result === "string" && evt.result.trim()) {
+        return evt.result.trim()
+      }
+    } catch {
+      // Not JSON — the raw-stdout fallback still shows it.
+    }
+  }
+  return ""
+}
+
+/**
  * Translate `claude` CLI exit-with-stderr into an actionable error
  * message for the user. The bare "exited with code N: <stderr>"
  * we used to throw was correct but unactionable — users had to
@@ -351,17 +371,24 @@ export function buildExitError(
   stderr: string,
   unparsedStdout: string = "",
 ): string {
-  if (/unauthenticated|please.*log\s*in|authentication.*failed/i.test(stderr)) {
+  // claude reports a failed turn in the final `result` event rather than
+  // on stderr: `{"type":"result","is_error":true,"result":"Failed to
+  // authenticate: OAuth session expired ..."}`. Pull that sentence out so
+  // the user reads it instead of a screenful of usage counters.
+  const resultText = extractResultText(unparsedStdout)
+  const diagnostic = stderr || resultText
+
+  if (/unauthenticated|oauth|please.*log\s*in|authentication.*failed|failed to authenticate/i.test(diagnostic)) {
     return [
       "Claude Code CLI is not authenticated.",
       "Please open a terminal and run `claude` to complete the OAuth login,",
       "then retry. (LLM-CO-WIKI only spawns the binary — it can't run the",
       "login flow on your behalf.)",
-      stderr ? `\n\n— stderr —\n${stderr}` : "",
+      diagnostic ? `\n\n— details —\n${diagnostic}` : "",
     ].join(" ").trim()
   }
-  if (stderr) {
-    return `claude CLI exited with code ${code}: ${stderr}`
+  if (diagnostic) {
+    return `claude CLI exited with code ${code}: ${diagnostic}`
   }
   if (unparsedStdout.trim()) {
     return [

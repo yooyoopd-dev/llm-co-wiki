@@ -347,7 +347,11 @@ export async function sweepResolvedReviews(
   if (!matchesCurrentProject(projectPath)) return 0
 
   const store = useReviewStore.getState()
-  const pending = store.items.filter((i) => !i.resolved)
+  // An item the user is mid-decision on is theirs, not the sweep's: a
+  // pending proposal would be silently discarded by an auto-resolve.
+  const pending = store.items.filter(
+    (i) => !i.resolved && i.decision?.status !== "proposed",
+  )
 
   if (pending.length === 0) return 0
 

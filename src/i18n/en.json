@@ -205,6 +205,7 @@
     "sourceCount_plural": "{{count}} sources"
   },
   "chat": {
+    "error": { "details": "Details" },
     "selectionEdit": {
       "title": "Proposed selection edit",
       "reviewHint": "Review before writing",
@@ -414,6 +415,34 @@
   },
   "review": {
     "title": "Review",
+    "decision": {
+      "open": "Decide with the model…",
+      "label": "Decision:",
+      "kind": {
+        "keep": "Keep as-is",
+        "apply-suggestion": "Apply suggestion",
+        "custom": "Custom instruction"
+      },
+      "keepHint": "Resolves the item without changing the wiki.",
+      "confirmKeep": "Keep as-is",
+      "keptAsIs": "Kept as-is",
+      "targets": "Pages this may edit",
+      "noTargets": "This item names no pages. Allow new pages, or edit the instruction to say where the change belongs.",
+      "allowCreate": "Allow creating new pages",
+      "instructionPlaceholder": "Tell the model what to change, e.g. \"add the 2024 benchmark numbers and cite the source page\"",
+      "propose": "Generate proposal",
+      "regenerate": "Regenerate",
+      "apply": "Apply to wiki",
+      "discard": "Discard proposal",
+      "opCreate": "new page",
+      "opUpdate": "edit",
+      "noChanges": "The model reported nothing to change. Adjust the instruction and try again.",
+      "stale": "These pages changed after the proposal was generated: {{pages}}. Regenerate before applying.",
+      "blocked": {
+        "instruction": "Write an instruction first",
+        "targets": "Select a page, or allow new pages"
+      }
+    },
     "clearResolved": "Clear resolved",
     "refresh": "Refresh",
     "refreshHint": "Reload review items from disk",

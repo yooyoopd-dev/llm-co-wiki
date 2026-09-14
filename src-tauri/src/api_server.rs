@@ -1538,6 +1538,41 @@ struct PatchReviewRequest {
     /// (e.g. "Skip", "Created page"). Mark-only — the API never
     /// replicates the WebView's side effects (page creation, etc).
     action: Option<String>,
+    /// Optional review decision to record. Only `{"kind": "keep"}` is
+    /// accepted: generating and applying wiki edits runs through the
+    /// WebView's LLM client, which this server has no access to, so a
+    /// decision that would edit pages is refused rather than silently
+    /// recorded and never carried out.
+    decision: Option<PatchReviewDecision>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PatchReviewDecision {
+    kind: String,
+    instruction: Option<String>,
+}
+
+/// Convert a requested decision into the object stored on the review item.
+///
+/// Only `keep` is accepted. Generating and applying wiki edits runs through
+/// the WebView's LLM client — CLI providers exist nowhere else — so a
+/// decision this server could never carry out is refused instead of being
+/// recorded as though it had been.
+fn normalize_patch_decision(decision: &PatchReviewDecision) -> Result<Value, String> {
+    if decision.kind != "keep" {
+        return Err(format!(
+            "Decision '{}' cannot be recorded through the API. Only 'keep' is supported here; generating and applying wiki edits requires the app window.",
+            decision.kind
+        ));
+    }
+    Ok(json!({
+        "kind": "keep",
+        "instruction": decision.instruction.clone().unwrap_or_default(),
+        "targets": [],
+        "allowCreate": false,
+        "status": "applied",
+    }))
 }
 
 /// `PATCH /projects/{id}/reviews/{reviewId}` — partial update of a
@@ -1557,6 +1592,7 @@ fn handle_patch_review(
         PatchReviewRequest {
             resolved: None,
             action: None,
+            decision: None,
         }
     } else {
         match serde_json::from_str::<PatchReviewRequest>(body) {
@@ -1564,8 +1600,18 @@ fn handle_patch_review(
             Err(e) => return err(400, format!("Invalid request body: {e}")),
         }
     };
+    let decision = match req.decision.as_ref().map(normalize_patch_decision) {
+        None => None,
+        Some(Ok(decision)) => Some(decision),
+        Some(Err(message)) => return err(400, message),
+    };
     let resolved = req.resolved.unwrap_or(true);
-    match patch_review_item(&project.path, review_id, resolved, req.action.as_deref()) {
+    let action = match (req.action.as_deref(), decision.is_some()) {
+        (Some(action), _) => Some(action),
+        (None, true) => Some("Kept as-is"),
+        (None, false) => None,
+    };
+    match patch_review_item(&project.path, review_id, resolved, action, decision.as_ref()) {
         Ok(true) => ok(json!({
             "ok": true,
             "projectId": project.id,
@@ -1627,6 +1673,7 @@ fn patch_review_item(
     review_id: &str,
     resolved: bool,
     action: Option<&str>,
+    decision: Option<&Value>,
 ) -> Result<bool, String> {
     let path = Path::new(project_path).join(".llm-wiki/review.json");
     let mut parsed = match read_raw_review_array(&path)? {
@@ -1643,6 +1690,9 @@ fn patch_review_item(
             continue;
         }
         apply_resolution(item, resolved, action);
+        if let (Some(decision), Some(obj)) = (decision, item.as_object_mut()) {
+            obj.insert("decision".to_string(), decision.clone());
+        }
         if let Some(stable_id) = stable_review_id(item) {
             if let Some(obj) = item.as_object_mut() {
                 obj.insert("id".to_string(), Value::String(stable_id));
@@ -2853,6 +2903,68 @@ mod tests {
     }
 
     #[test]
+    fn normalize_patch_decision_accepts_keep_only() {
+        let keep = PatchReviewDecision {
+            kind: "keep".to_string(),
+            instruction: Some("leave it".to_string()),
+        };
+        let stored = normalize_patch_decision(&keep).unwrap();
+        assert_eq!(stored.get("kind").and_then(Value::as_str), Some("keep"));
+        assert_eq!(stored.get("status").and_then(Value::as_str), Some("applied"));
+        assert_eq!(
+            stored.get("instruction").and_then(Value::as_str),
+            Some("leave it")
+        );
+
+        // A decision that would edit pages needs the WebView's LLM client,
+        // so recording it here would promise work nothing will ever do.
+        let custom = PatchReviewDecision {
+            kind: "custom".to_string(),
+            instruction: Some("rewrite the page".to_string()),
+        };
+        let message = normalize_patch_decision(&custom).unwrap_err();
+        assert!(message.contains("Only 'keep' is supported"));
+    }
+
+    #[test]
+    fn patch_review_item_stores_a_recorded_decision() {
+        let root = test_project_dir();
+        write_reviews(
+            &root,
+            json!([{ "id": "r1", "type": "suggestion", "resolved": false, "createdAt": 1 }]),
+        );
+
+        let decision = normalize_patch_decision(&PatchReviewDecision {
+            kind: "keep".to_string(),
+            instruction: None,
+        })
+        .unwrap();
+        let found = patch_review_item(
+            root.to_str().unwrap(),
+            "r1",
+            true,
+            Some("Kept as-is"),
+            Some(&decision),
+        )
+        .unwrap();
+        assert!(found);
+
+        let parsed = read_reviews(&root);
+        let r1 = &parsed.as_array().unwrap()[0];
+        assert_eq!(r1.get("resolved").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            r1.get("resolvedAction").and_then(Value::as_str),
+            Some("Kept as-is")
+        );
+        assert_eq!(
+            r1.get("decision")
+                .and_then(|d| d.get("kind"))
+                .and_then(Value::as_str),
+            Some("keep")
+        );
+    }
+
+    #[test]
     fn patch_review_item_marks_resolved_and_preserves_unsanitized_fields() {
         let root = test_project_dir();
         write_reviews(
@@ -2869,7 +2981,7 @@ mod tests {
             ]),
         );
 
-        let found = patch_review_item(root.to_str().unwrap(), "r1", true, Some("Skip")).unwrap();
+        let found = patch_review_item(root.to_str().unwrap(), "r1", true, Some("Skip"), None).unwrap();
         assert!(found);
 
         // Re-read the RAW file: r1 must be resolved with the action label,
@@ -2915,7 +3027,7 @@ mod tests {
 
         let stable_id = review_id_for_parts("missing-page", "Attention");
         let found =
-            patch_review_item(root.to_str().unwrap(), &stable_id, true, Some("API")).unwrap();
+            patch_review_item(root.to_str().unwrap(), &stable_id, true, Some("API"), None).unwrap();
         assert!(found);
 
         let parsed = read_reviews(&root);
@@ -2940,7 +3052,7 @@ mod tests {
             json!([{ "id": "r1", "resolved": true, "resolvedAction": "Skip" }]),
         );
 
-        let found = patch_review_item(root.to_str().unwrap(), "r1", false, None).unwrap();
+        let found = patch_review_item(root.to_str().unwrap(), "r1", false, None, None).unwrap();
         assert!(found);
 
         let parsed = read_reviews(&root);
@@ -2955,7 +3067,7 @@ mod tests {
         let root = test_project_dir();
         write_reviews(&root, json!([{ "id": "r1", "resolved": false }]));
 
-        let found = patch_review_item(root.to_str().unwrap(), "nope", true, None).unwrap();
+        let found = patch_review_item(root.to_str().unwrap(), "nope", true, None, None).unwrap();
         assert!(!found);
         let _ = fs::remove_dir_all(root);
     }
@@ -2963,7 +3075,7 @@ mod tests {
     #[test]
     fn patch_review_item_missing_file_returns_false() {
         let root = test_project_dir();
-        let found = patch_review_item(root.to_str().unwrap(), "r1", true, None).unwrap();
+        let found = patch_review_item(root.to_str().unwrap(), "r1", true, None, None).unwrap();
         assert!(!found);
         let _ = fs::remove_dir_all(root);
     }
