@@ -242,13 +242,19 @@ API로는 `keep` 결정과 상태 조회만 지원. (§6)
 
 ---
 
-## 6. 열린 질문 (구현 전 결정 필요)
+## 6. 결정 사항 (확정, 2026-09-14)
 
-1. **삭제/병합 op**: duplicate 항목에서 한쪽 페이지를 지우는 결정을 1차에 넣을지.
-   (안전한 대안: 병합 후 남는 쪽에 리다이렉트 스텁)
-2. **stale 검사 위치**: Rust 커맨드 신설(정확) vs 프론트 read-compare-write(간단, 레이스 잔존).
-3. **제안 저장 위치**: `.llm-wiki/review-proposals/*.json` 영속화 vs 메모리 전용
-   (앱 재시작 시 제안 소실 허용 여부).
-4. **모델 라우팅**: `getTaskLlmConfig("ingest")` 재사용 vs `"review"` 태스크 종류 신설
-   (신설 시 `LlmTaskKind` + 설정 UI 확장 필요).
-5. **API 서버 범위**: 결정 기록만 vs 제안 생성까지 (후자는 Rust 측 LLM 경로 필요).
+| # | 질문 | 결정 | 구현 위치 |
+|---|---|---|---|
+| 1 | 삭제/병합 op | **삭제 없음.** 내용을 옮기고 빈 페이지에는 리다이렉트 스텁을 남기도록 프롬프트가 지시 | `review-decision.ts` 프롬프트 규칙 |
+| 2 | stale 검사 위치 | **프론트엔드 + 기존 프로젝트 락.** 적용 직전 재읽기 후 `before`와 완전 일치할 때만 쓰기 | `review-apply.ts` `applyReviewProposal` |
+| 3 | 제안 영속화 | **파일로 저장.** 항목당 1개, 적용/폐기 시 삭제 | `.llm-wiki/review-proposals/<reviewId>.json` |
+| 4 | 모델 라우팅 | **`getTaskLlmConfig("ingest")` 재사용.** 새 태스크 종류 신설 안 함 | `review-apply.ts` |
+| 5 | API 서버 범위 | **`keep` 결정 기록 + 조회만.** 다른 kind는 400으로 거부 | `api_server.rs` `normalize_patch_decision` |
+
+구현 완료. 실제 구조는 §3과 일치하며, 차이점은 아래뿐이다:
+
+- `ReviewDecision.proposalRef`(§3.1 초안) → `hasProposal: boolean`. 제안 파일명이
+  항상 review id이므로 별도 참조 문자열이 불필요했다.
+- diff는 페이지 전문 대신 frontmatter를 제외한 본문에 대해 계산하고,
+  긴 무변경 구간은 `condenseDiff`로 접는다.

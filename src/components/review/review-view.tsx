@@ -10,6 +10,7 @@ import {
   Check,
   Trash2,
   RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
@@ -22,6 +23,7 @@ import { createReviewPageDrafts } from "@/lib/review-create-page"
 import { cleanAssistantContentForWikiSave, titleFromCleanAssistantContent } from "@/lib/chat-save-to-wiki"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
+import { ReviewDecisionPanel } from "@/components/review/review-decision-panel"
 
 const typeConfig: Record<ReviewItem["type"], { icon: typeof AlertTriangle; color: string }> = {
   contradiction: { icon: AlertTriangle, color: "text-amber-500" },
@@ -386,6 +388,7 @@ export function ReviewView() {
               <ReviewCard
                 key={item.id}
                 item={item}
+                projectPath={project?.path ?? ""}
                 onResolve={handleResolve}
                 onDismiss={dismissItem}
                 selected={selectedReviewIds.has(item.id)}
@@ -403,6 +406,7 @@ export function ReviewView() {
               <ReviewCard
                 key={item.id}
                 item={item}
+                projectPath={project?.path ?? ""}
                 onResolve={handleResolve}
                 onDismiss={dismissItem}
                 selected={selectedReviewIds.has(item.id)}
@@ -420,6 +424,7 @@ export function ReviewView() {
 
 function ReviewCard({
   item,
+  projectPath,
   onResolve,
   onDismiss,
   selected,
@@ -428,6 +433,7 @@ function ReviewCard({
   error,
 }: {
   item: ReviewItem
+  projectPath: string
   onResolve: (id: string, action: string) => void
   onDismiss: (id: string) => void
   selected: boolean
@@ -438,6 +444,9 @@ function ReviewCard({
   const { t } = useTranslation()
   const config = typeConfig[item.type]
   const Icon = config.icon
+  // Collapsed by default so a long queue stays scannable; an item that
+  // already carries a decision opens with it in view.
+  const [decisionOpen, setDecisionOpen] = useState(item.decision !== undefined)
   return (
     <div
       className={`rounded-lg border p-3 text-sm transition-opacity ${
@@ -495,6 +504,21 @@ function ReviewCard({
             </Button>
           ))}
           </div>
+          {projectPath && (
+            decisionOpen ? (
+              <ReviewDecisionPanel item={item} projectPath={projectPath} />
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground"
+                onClick={() => setDecisionOpen(true)}
+              >
+                <SlidersHorizontal className="mr-1 h-3 w-3" />
+                {t("review.decision.open")}
+              </Button>
+            )
+          )}
         </div>
       ) : (
         <div className="flex items-center gap-1 text-xs text-emerald-600">
