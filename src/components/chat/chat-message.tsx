@@ -1312,9 +1312,38 @@ interface StreamingMessageProps {
   agentEvents?: ChatAgentEvent[]
 }
 
+/**
+ * The waiting indicator, shown between sending a message and the first
+ * token of the answer.
+ *
+ * On a CLI provider that wait covers a backend retrieval call and a cold CLI
+ * process, so it is the longest stretch of the turn — and it used to show
+ * nothing but a blinking `▊`, which reads as a stalled text cursor rather
+ * than as work in progress.
+ *
+ * Styles live in index.css under `.chat-loader`.
+ */
+function ChatWaitingLoader() {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="chat-loader text-muted-foreground"
+      role="status"
+      aria-label={t("common.loading")}
+    >
+      <span className="chat-loader-bar" />
+      <span className="chat-loader-bar" />
+      <span className="chat-loader-bar" />
+    </div>
+  )
+}
+
 export function StreamingMessage({ content, agentEvents = [] }: StreamingMessageProps) {
   const { thinking, answer } = useMemo(() => separateThinking(content), [content])
   const isThinking = thinking !== null && answer.length === 0
+  // Nothing has arrived yet — neither reasoning nor answer. Rendering empty
+  // markdown plus a cursor here is what made the wait look like a hang.
+  const isWaiting = thinking === null && answer.length === 0
 
   return (
     <div className="flex gap-2 flex-row">
@@ -1323,7 +1352,9 @@ export function StreamingMessage({ content, agentEvents = [] }: StreamingMessage
       </div>
       <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-muted text-foreground">
         <AgentActivity events={agentEvents} />
-        {isThinking ? (
+        {isWaiting ? (
+          <ChatWaitingLoader />
+        ) : isThinking ? (
           <StreamingThinkingBlock content={thinking} />
         ) : (
           <>

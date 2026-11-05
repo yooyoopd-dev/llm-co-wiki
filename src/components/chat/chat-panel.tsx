@@ -10,6 +10,8 @@ import { useChatStore, chatMessagesToLLM, type MessageImage, type MessageReferen
 import { useWikiStore } from "@/stores/wiki-store"
 import { resolveTaskLlmConfig } from "@/lib/llm-task-routing"
 import { isReasoningOnlyResponseError, streamChat } from "@/lib/llm-client"
+import { isGreeting } from "@/lib/greeting-detector"
+import { formatChatTurnTiming } from "@/lib/chat-turn-timing"
 import { supportsImageInput } from "@/lib/llm-providers"
 import { executeIngestWrites } from "@/lib/ingest"
 import { deleteFile, openPathInProject, readFile } from "@/commands/fs"
@@ -1052,47 +1054,102 @@ export function ChatPanel() {
                   .map((block) => block.text)
                   .join("\n"),
           }))
-        const backendResponse = await invoke<BackendAgentResponse>("agent_start_turn", {
-          projectId: project?.id ?? "current",
-          llmConfig,
-          request: {
-            message: text,
-            sessionId: convId,
-            runId: backendRunId,
-            persistSession: false,
-            // CLI transports generate the answer in the frontend; this call
-            // only collects wiki context, so an empty retrieval is a valid
-            // result rather than a missing-LLM failure.
-            retrievalOnly: true,
-            mode: sendOptions.agentMode,
-            retrievalMode: sendOptions.retrievalMode,
-            tools: { wiki: true },
-            topK: sendOptions.agentMode === "deep" ? 8 : 5,
-            includeContent: sendOptions.agentMode === "deep",
-            skills: requestSkills,
-            contextFiles: sendOptions.contextFiles,
-            skillMode: requestedSkillMode,
-            historyExplicit: true,
-            approvedShellCommands: sendOptions.approvedShellCommands ?? [],
-            shellCommand: sendOptions.shellCommand,
-            history: priorWireMessages,
-            images: images.map((image) => ({
-              mediaType: image.mediaType,
-              dataBase64: image.dataBase64,
-            })),
-          },
-        })
+        // A greeting has no information need, so the retrieval round trip
+        // is pure latency. On this path it would otherwise always run:
+        // the backend's model planner is unavailable for CLI providers,
+        // which makes its wiki.search fallback fire for every message.
+        // Anything carrying attachments, skills or a shell command is a
+        // real request regardless of how the text reads.
+        const retrievalSkipReason =
+          isGreeting(text)
+          && images.length === 0
+          && requestSkills.length === 0
+          && (sendOptions.contextFiles?.length ?? 0) === 0
+          && !sendOptions.shellCommand
+            ? "greeting"
+            : undefined
+
+        const turnStartedAt = performance.now()
+        let retrievalMs: number | undefined
+        let backendResponse: BackendAgentResponse | null = null
+
+        if (!retrievalSkipReason) {
+          setAgentEvents([{ stage: "searching_wiki", status: "running", timestamp: Date.now() }])
+          // The backend emits tool progress on `agent-event` even for this
+          // non-streaming command, so retrieval is visible while it runs
+          // instead of leaving the window blank until the CLI answers.
+          let retrievalUnlisten: (() => void) | null = null
+          const retrievalStartedAt = performance.now()
+          try {
+            retrievalUnlisten = await listen<BackendAgentEventPayload>("agent-event", (event) => {
+              const payload = event.payload
+              if (payload.sessionId !== convId || payload.runId !== backendRunId || !isCurrentRun()) return
+              const agentEvent = payload.event
+              if (agentEvent.type === "toolStart" && agentEvent.tool) {
+                setAgentEvents((prev) => [...prev, backendToolToAgentEvent({
+                  tool: agentEvent.tool as string,
+                  status: "started",
+                  detail: agentEvent.input,
+                  timestamp: Date.now(),
+                })].slice(-6))
+                return
+              }
+              if (agentEvent.type === "toolEnd" && agentEvent.tool) {
+                const output = typeof agentEvent.output === "string" ? agentEvent.output : undefined
+                setAgentEvents((prev) => [...prev, backendToolToAgentEvent({
+                  tool: agentEvent.tool as string,
+                  status: output?.startsWith("failed:") ? "failed" : "completed",
+                  detail: output,
+                  timestamp: Date.now(),
+                })].slice(-6))
+              }
+            })
+            backendResponse = await invoke<BackendAgentResponse>("agent_start_turn", {
+              projectId: project?.id ?? "current",
+              llmConfig,
+              request: {
+                message: text,
+                sessionId: convId,
+                runId: backendRunId,
+                persistSession: false,
+                // CLI transports generate the answer in the frontend; this call
+                // only collects wiki context, so an empty retrieval is a valid
+                // result rather than a missing-LLM failure.
+                retrievalOnly: true,
+                mode: sendOptions.agentMode,
+                retrievalMode: sendOptions.retrievalMode,
+                tools: { wiki: true },
+                topK: sendOptions.agentMode === "deep" ? 8 : 5,
+                includeContent: sendOptions.agentMode === "deep",
+                skills: requestSkills,
+                contextFiles: sendOptions.contextFiles,
+                skillMode: requestedSkillMode,
+                historyExplicit: true,
+                approvedShellCommands: sendOptions.approvedShellCommands ?? [],
+                shellCommand: sendOptions.shellCommand,
+                history: priorWireMessages,
+                images: images.map((image) => ({
+                  mediaType: image.mediaType,
+                  dataBase64: image.dataBase64,
+                })),
+              },
+            })
+          } finally {
+            retrievalUnlisten?.()
+            retrievalMs = performance.now() - retrievalStartedAt
+          }
+        }
         if (!isCurrentRun()) return
 
-        const backendReferences = (backendResponse.references ?? []).map(backendReferenceToMessageReference)
-        const backendSteps = (backendResponse.toolEvents ?? []).map(backendToolToAgentStep)
-        const backendEvents = (backendResponse.toolEvents ?? []).map(backendToolToAgentEvent)
+        const backendReferences = (backendResponse?.references ?? []).map(backendReferenceToMessageReference)
+        const backendSteps = (backendResponse?.toolEvents ?? []).map(backendToolToAgentStep)
+        const backendEvents = (backendResponse?.toolEvents ?? []).map(backendToolToAgentEvent)
         setAgentEvents(backendEvents.slice(-6))
         lastQueryPages = backendReferences
           .filter((ref) => ref.kind === "wiki")
           .map((ref) => ({ title: ref.title, path: ref.path }))
 
-        if (backendResponse.userInputRequest) {
+        if (backendResponse?.userInputRequest) {
           finalized = true
           finalizeStreamForConversation(
             convId,
@@ -1111,13 +1168,17 @@ export function ChatPanel() {
           return
         }
 
-        const contextText = [
-          "You have access to the current LLM-CO-WIKI project context below. Use it as retrieved evidence when it is relevant.",
-          "",
-          backendResponseText(backendResponse),
-          "",
-          `User request: ${text}`,
-        ].join("\n")
+        // With retrieval skipped there is no context to introduce, and
+        // announcing one that is not there invites the model to invent it.
+        const contextText = backendResponse
+          ? [
+              "You have access to the current LLM-CO-WIKI project context below. Use it as retrieved evidence when it is relevant.",
+              "",
+              backendResponseText(backendResponse),
+              "",
+              `User request: ${text}`,
+            ].join("\n")
+          : text
         const userContent: string | ContentBlock[] = images.length > 0
           ? [
               { type: "text", text: contextText },
@@ -1131,7 +1192,9 @@ export function ChatPanel() {
         const finalMessages: LlmChatMessage[] = [
           {
             role: "system",
-            content: "Answer using the provided LLM-CO-WIKI context and references. If the context is insufficient, say what is missing instead of inventing details.",
+            content: backendResponse
+              ? "Answer using the provided LLM-CO-WIKI context and references. If the context is insufficient, say what is missing instead of inventing details."
+              : "You are the assistant in LLM-CO-WIKI, a personal wiki app. No wiki context was retrieved for this message. Reply briefly and do not invent wiki content.",
           },
           ...(sendOptions.historyOverride ?? chatMessagesToLLM(priorMessages)),
           { role: "user", content: userContent },
@@ -1139,6 +1202,13 @@ export function ChatPanel() {
 
         let accumulated = ""
         let thinkingOpen = false
+        const generationStartedAt = performance.now()
+        let firstTokenMs: number | undefined
+        const markFirstToken = () => {
+          if (firstTokenMs === undefined) {
+            firstTokenMs = performance.now() - generationStartedAt
+          }
+        }
 
         const appendReasoning = (token: string) => {
           if (!token) return
@@ -1166,6 +1236,7 @@ export function ChatPanel() {
             {
               onToken: (token) => {
                 if (!isCurrentRun()) return
+                markFirstToken()
                 closeReasoning()
                 accumulated += token
                 appendStreamToken(token)
@@ -1173,6 +1244,7 @@ export function ChatPanel() {
               onReasoningToken: (token) => {
                 if (!isCurrentRun()) return
                 if (reasoningOff) return
+                markFirstToken()
                 appendReasoning(token)
               },
               onDone: () => {},
@@ -1202,6 +1274,16 @@ export function ChatPanel() {
 
         if (!isCurrentRun()) return
         closeReasoning()
+        // Where the turn actually went. Retrieval and the CLI are separate
+        // costs and only this split tells them apart; see chat-turn-timing.
+        console.log(
+          formatChatTurnTiming(llmConfig.provider, llmConfig.model, {
+            retrievalMs,
+            firstTokenMs,
+            totalMs: performance.now() - turnStartedAt,
+            retrievalSkipped: retrievalSkipReason,
+          }),
+        )
         finalized = true
         finalizeStreamForConversation(convId, accumulated, backendReferences, backendSteps)
         autoOpenSingleGeneratedOutput(convId, backendReferences)
