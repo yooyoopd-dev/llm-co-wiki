@@ -270,3 +270,67 @@ describe("isStreamJsonOutput", () => {
     expect(isStreamJsonOutput(`Loaded cached credentials.\n${jsonl}`)).toBe(true)
   })
 })
+
+/**
+ * Captured verbatim from a real `gemini --skip-trust --approval-mode plan
+ * -o stream-json` run on Windows (Gemini CLI, model auto → gemini-3-flash).
+ *
+ * This is the fixture that matters: everything else in this file was derived
+ * from reading the CLI's bundled emitter, which is evidence about the code,
+ * not about what the process actually writes. Keep it byte-for-byte —
+ * including the non-JSON chrome lines and the `\r\n` the Windows shell left
+ * in the echoed prompt.
+ */
+const REAL_WINDOWS_RUN = [
+  "Warning: Windows 10 detected. Some UI features like smooth scrolling may be degraded. Windows 11 is recommended for the best experience.",
+  "Ripgrep is not available. Falling back to GrepTool.",
+  '{"type":"init","timestamp":"2026-11-05T13:15:53.868Z","session_id":"e12a1654-faf2-4f52-9249-1dbaabdf3edb","model":"auto"}',
+  '{"type":"message","timestamp":"2026-11-05T13:15:53.871Z","role":"user","content":"say hello in 5 words\\r\\n"}',
+  '{"type":"message","timestamp":"2026-11-05T13:15:57.436Z","role":"assistant","content":"Hello! How can I help?","delta":true}',
+  '{"type":"result","timestamp":"2026-11-05T13:15:57.466Z","status":"success","stats":{"total_tokens":13977,"input_tokens":13970,"output_tokens":7,"cached":0,"input":13970,"duration_ms":3598,"tool_calls":0,"models":{"gemini-3.1-pro-preview-customtools":{"total_tokens":0,"input_tokens":0,"output_tokens":0,"cached":0,"input":0},"gemini-3-flash-preview":{"total_tokens":13977,"input_tokens":13970,"output_tokens":7,"cached":0,"input":13970}}}}',
+]
+
+describe("real captured stream-json run", () => {
+  it("yields exactly the assistant's answer and nothing else", () => {
+    const text = REAL_WINDOWS_RUN
+      .map(parseGeminiStreamLine)
+      .filter((token): token is string => token !== null)
+      .join("")
+    expect(text).toBe("Hello! How can I help?")
+  })
+
+  it("drops the echoed prompt, the init line and the startup chrome", () => {
+    // The echo is the dangerous one: it is a `message` event like the
+    // answer, so only the role check keeps the prompt — in the app, the
+    // whole wiki context — out of the chat bubble.
+    const emitted = REAL_WINDOWS_RUN.filter((line) => parseGeminiStreamLine(line) !== null)
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]).toContain('"role":"assistant"')
+  })
+
+  it("survives the Windows CRLF left in the echoed prompt", () => {
+    const echo = REAL_WINDOWS_RUN[3]
+    expect(echo).toContain("\\r\\n")
+    expect(parseGeminiStreamLine(echo)).toBeNull()
+    expect(parseGeminiStreamLine(`${REAL_WINDOWS_RUN[4]}\r`)).toBe("Hello! How can I help?")
+  })
+
+  it("reports no error for a successful run", () => {
+    expect(REAL_WINDOWS_RUN.map(parseGeminiStreamError).every((e) => e === null)).toBe(true)
+  })
+
+  it("is recognised as a stream, so the envelope fallback stays out of it", () => {
+    const stdout = REAL_WINDOWS_RUN.join("\n")
+    expect(isStreamJsonOutput(stdout)).toBe(true)
+    // Without that guard the fallback would treat the whole buffer —
+    // chrome, init, echo, stats — as the answer.
+    expect(parseGeminiCliOutput(stdout).text).toContain("Ripgrep is not available")
+  })
+
+  it("does not double-count: the success result carries stats, no text", () => {
+    const result: unknown = JSON.parse(REAL_WINDOWS_RUN[5])
+    expect(result).toHaveProperty("stats")
+    expect(result).not.toHaveProperty("response")
+    expect(parseGeminiStreamLine(REAL_WINDOWS_RUN[5])).toBeNull()
+  })
+})
