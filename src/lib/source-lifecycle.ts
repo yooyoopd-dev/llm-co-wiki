@@ -41,6 +41,13 @@ import type { SourceWatchConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { preprocessSourceFiles } from "@/lib/source-preprocess"
 import { moveParsedMarkdown, removeParsedMarkdown } from "@/lib/parsed-source-output"
+import { parseFrontmatter } from "@/lib/frontmatter"
+import { useReviewStore } from "@/stores/review-store"
+import {
+  buildSourceRemovalReview,
+  staleSourceReviewIds,
+  type RewrittenPage,
+} from "@/lib/source-removal-followup"
 
 export const INGESTABLE_SOURCE_EXTENSIONS = new Set([
   "md",
@@ -509,6 +516,7 @@ export async function deleteSourceFiles(
   }
 
   const pagesToDelete: string[] = []
+  const rewrittenPages: Array<RewrittenPage & { path: string; content: string }> = []
   let rewrittenSourcePages = 0
   let skippedPages = 0
 
@@ -544,12 +552,28 @@ export async function deleteSourceFiles(
     if (survivors.length === 0) {
       pagesToDelete.push(file.path)
     } else {
+      const rewritten = writeSources(content, survivors)
       try {
-        await writeFile(file.path, writeSources(content, survivors))
+        await writeFile(file.path, rewritten)
         rewrittenSourcePages++
       } catch (err) {
         console.warn(`[source-lifecycle] failed to rewrite sources for ${file.path}:`, err)
+        continue
       }
+      // The body still carries whatever the removed source contributed;
+      // only the provenance list changed. Collect the page so the caller
+      // can re-index it and raise it for human review below.
+      const relativePath = getRelativePath(file.path, pp)
+      const slug = getFileStem(file.path)
+      const fmTitle = parseFrontmatter(rewritten).frontmatter?.title
+      rewrittenPages.push({
+        path: file.path,
+        content: rewritten,
+        relativePath,
+        title: typeof fmTitle === "string" && fmTitle.trim() ? fmTitle.trim() : slug,
+        removed: sources.filter((source) => !survivors.includes(source)),
+        survivors,
+      })
     }
   }
 
@@ -558,6 +582,49 @@ export async function deleteSourceFiles(
     const { cascadeDeleteWikiPagesWithRefs } = await import("@/lib/wiki-page-delete")
     const result = await cascadeDeleteWikiPagesWithRefs(pp, pagesToDelete)
     deletedWikiPaths = result.deletedPaths
+  }
+
+  // Pages that only lost a source keep their body, so their indexed
+  // chunks still contain the removed source's text and would keep
+  // surfacing in chat retrieval. Re-index them against the file as it
+  // now stands. Failures are non-critical: a stale chunk is worse than
+  // no chunk, but neither justifies failing the delete.
+  if (rewrittenPages.length > 0) {
+    const embCfg = useWikiStore.getState().embeddingConfig
+    if (embCfg.enabled && embCfg.model) {
+      try {
+        const { embedPage } = await import("@/lib/embedding")
+        for (const page of rewrittenPages) {
+          const slug = getFileStem(page.path)
+          if (!slug) continue
+          try {
+            await embedPage(pp, slug, page.title, page.content, embCfg)
+          } catch (err) {
+            console.warn(`[source-lifecycle] failed to re-index ${page.relativePath}:`, err)
+          }
+        }
+      } catch (err) {
+        console.warn("[source-lifecycle] embedding module unavailable during delete:", err)
+      }
+    }
+  }
+
+  // Raise each surviving page for human review, and drop review items
+  // that now point at a source which no longer exists. Both go through
+  // the store so the auto-save subscriber persists them.
+  const reviewStore = useReviewStore.getState()
+  const staleIds = new Set(
+    staleSourceReviewIds(reviewStore.items, (sourcePath) =>
+      sourceNameMatchesAny(sourcePath, deletingIdentities, deletingNames),
+    ),
+  )
+  if (staleIds.size > 0) {
+    reviewStore.setItems(reviewStore.items.filter((item) => !staleIds.has(item.id)))
+  }
+  if (rewrittenPages.length > 0) {
+    useReviewStore
+      .getState()
+      .addItems(rewrittenPages.map((page) => buildSourceRemovalReview(page)))
   }
 
   await appendSourceDeleteLog(pp, sourceInfos.map((info) => info.identity), {

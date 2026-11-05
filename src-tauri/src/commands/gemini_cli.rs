@@ -1,11 +1,14 @@
 //! Gemini CLI subprocess transport.
 //!
-//! Sibling of `codex_cli.rs`, but Gemini CLI does not stream JSONL: with
-//! `-o json` it prints a single envelope
-//! (`{ session_id, response, stats, error }`) once the turn is finished, and
-//! puts the *error* envelope on stderr with exit code 41. So there is nothing
-//! to emit per line — this command collects stdout/stderr and fires one
-//! `gemini-cli:{stream_id}:done` event; the TS transport opens the envelope.
+//! Sibling of `codex_cli.rs`. With `-o stream-json` the CLI prints
+//! newline-delimited JSON events while the turn runs, so each stdout line is
+//! emitted as a `gemini-cli:{stream_id}` event and the TS transport turns the
+//! assistant deltas into tokens.
+//!
+//! The accumulated stdout still rides along on the final
+//! `gemini-cli:{stream_id}:done` event, and the *error* envelope still arrives
+//! on stderr with exit code 41 — the frontend parses both when no assistant
+//! delta was seen, so a failed or non-streaming run is still diagnosable.
 //!
 //! Flag choices and the failure modes they defend against are documented on
 //! `build_gemini_cli_args`; they come from the measured behaviour of Gemini
@@ -436,12 +439,19 @@ pub async fn gemini_cli_spawn(
             collected
         });
 
-        // Unlike Codex, nothing is emitted per line: the whole answer arrives
-        // as one JSON envelope, so the buffer is only handed over at the end.
+        // `-o stream-json` prints newline-delimited JSON events as the turn
+        // runs, so each line is forwarded immediately AND appended to the
+        // buffer. The buffer still goes out with the done event: the frontend
+        // falls back to parsing it whole when no assistant delta arrived,
+        // which is also where a non-streaming error envelope shows up.
+        let line_topic = format!("gemini-cli:{stream_id_task}");
         let mut stdout_text = String::new();
         loop {
             match reader.next_line().await {
-                Ok(Some(line)) => append_capped_line(&mut stdout_text, &line, STDOUT_LIMIT_BYTES),
+                Ok(Some(line)) => {
+                    let _ = app.emit(&line_topic, line.clone());
+                    append_capped_line(&mut stdout_text, &line, STDOUT_LIMIT_BYTES);
+                }
                 Ok(None) => break,
                 Err(e) => {
                     eprintln!("[gemini-cli stdout] read error: {e}");
@@ -501,8 +511,12 @@ pub async fn gemini_cli_spawn(
 /// * `--approval-mode plan` — read-only. The model may look at the project
 ///   but cannot write files or run commands; this transport is a completion
 ///   engine, not an agent with a workspace.
-/// * `-o json` — the machine-readable envelope. Plain stdout mixes the answer
-///   with the CLI's own chrome.
+/// * `-o stream-json` — newline-delimited JSON events as the turn runs. Plain
+///   stdout mixes the answer with the CLI's own chrome, and the single-envelope
+///   `-o json` withholds everything until the turn ends, which made every
+///   answer appear at once after the full generation latency. Available since
+///   Gemini CLI v0.11.0, well below the 0.58.0 this transport was built
+///   against, so there is no version gate.
 /// * `-m <model>` — the preset's model id.
 ///
 /// The prompt deliberately does *not* go through `-p`: it is written to stdin,
@@ -530,7 +544,7 @@ fn build_gemini_cli_args(model: &str) -> Vec<String> {
         "--approval-mode".to_string(),
         "plan".to_string(),
         "-o".to_string(),
-        "json".to_string(),
+        "stream-json".to_string(),
     ];
     let model = model.trim();
     if !model.is_empty() {
@@ -648,7 +662,11 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--approval-mode" && pair[1] == "plan"));
-        assert!(args.windows(2).any(|pair| pair[0] == "-o" && pair[1] == "json"));
+        // stream-json, not json: the single envelope withheld the whole
+        // answer until the turn finished.
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-o" && pair[1] == "stream-json"));
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "-m" && pair[1] == "gemini-2.5-pro"));

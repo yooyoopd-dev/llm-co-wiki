@@ -113,8 +113,25 @@ async fn agent_start_turn(
     let cancellation = app
         .state::<agent::cancel::AgentCancellationRegistry>()
         .start(&project.id, &active_session_id, &active_run_id);
+    // Emit tool progress on the same `agent-event` channel the streaming
+    // command uses. CLI-transport chat calls this command for retrieval
+    // only and generates the answer itself, so without a sink the window
+    // has nothing to show for however long retrieval takes.
+    let emit_app = app.clone();
+    let emit_session = active_session_id.clone();
+    let emit_run = active_run_id.clone();
+    let sink: agent::runtime::AgentEventSink = std::sync::Arc::new(move |event| {
+        let _ = emit_app.emit(
+            "agent-event",
+            serde_json::json!({
+                "sessionId": emit_session.clone(),
+                "runId": emit_run.clone(),
+                "event": event,
+            }),
+        );
+    });
     let result = runtime
-        .run_once_with_cancel(request, Some(cancellation))
+        .run_once_with_cancel_and_events(request, Some(cancellation), Some(sink))
         .await;
     app.state::<agent::cancel::AgentCancellationRegistry>()
         .finish(&project.id, &active_session_id, &active_run_id);

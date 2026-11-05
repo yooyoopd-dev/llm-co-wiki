@@ -180,3 +180,60 @@
 .legend-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* Chat "waiting for the model" loader.
+ *
+ * From Uiverse.io by aryamitra06 (silent-lion-21), with two adaptations:
+ *
+ *   - Class names are namespaced. The original `.loader` / `.bar` are too
+ *     generic to drop into an app this size without colliding.
+ *   - Colours come from `currentColor` instead of hard-coded white. The
+ *     original targets a dark page; this app has a light theme too, where
+ *     white bars on `bg-muted` are invisible — which is the visibility
+ *     problem the loader is here to fix.
+ *
+ * The geometry, timing, delays and keyframes are the original's.
+ */
+.chat-loader {
+  display: flex;
+  align-items: center;
+}
+
+.chat-loader-bar {
+  display: inline-block;
+  width: 3px;
+  height: 20px;
+  background-color: color-mix(in oklab, currentColor 50%, transparent);
+  border-radius: 10px;
+  animation: chat-loader-scale-up 1s linear infinite;
+}
+
+.chat-loader-bar:nth-child(2) {
+  height: 35px;
+  margin: 0 5px;
+  animation-delay: 0.25s;
+}
+
+.chat-loader-bar:nth-child(3) {
+  animation-delay: 0.5s;
+}
+
+@keyframes chat-loader-scale-up {
+  20% {
+    background-color: currentColor;
+    transform: scaleY(1.5);
+  }
+
+  40% {
+    transform: scaleY(1);
+  }
+}
+
+/* A bar pulsing twice a second is exactly what this setting is for. The
+ * bars stay visible at their resting height so the indicator still reads
+ * as "working". */
+@media (prefers-reduced-motion: reduce) {
+  .chat-loader-bar {
+    animation: none;
+  }
+}

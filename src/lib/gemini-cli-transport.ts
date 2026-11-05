@@ -2,14 +2,15 @@
  * Gemini CLI subprocess transport.
  *
  * Rust-side counterpart: src-tauri/src/commands/gemini_cli.rs. The Rust
- * command spawns `gemini --skip-trust --approval-mode plan -o json`, sends a
- * single reconstructed prompt over stdin, and emits one
+ * command spawns `gemini --skip-trust --approval-mode plan -o stream-json`,
+ * sends a single reconstructed prompt over stdin, emits every stdout line as
+ * a `gemini-cli:{streamId}` event, and finishes with one
  * `gemini-cli:{streamId}:done` event carrying the whole stdout/stderr.
  *
- * There is no token stream to subscribe to: with `-o json` the CLI prints a
- * single envelope after the turn finishes, so the answer is delivered as one
- * `onToken` call. Callers that need incremental rendering will see the whole
- * message appear at once — same end state, no partial paint.
+ * Assistant text arrives as JSONL `message` deltas, so it streams token by
+ * token. The done event is still parsed as a single `-o json` envelope when
+ * no delta was seen — that is where the error envelope lives, and it keeps a
+ * CLI that ignored the flag working rather than reporting an empty answer.
  */
 
 import { invoke } from "@tauri-apps/api/core"
@@ -88,6 +89,121 @@ export function parseGeminiCliOutput(stdout: string, stderr = ""): ParsedGeminiO
   return { text: (envelope.response ?? "").trim(), error: null }
 }
 
+/**
+ * One parsed JSONL event from `-o stream-json`, reduced to what this
+ * transport uses.
+ *
+ * Shapes are taken from Gemini CLI 0.67.0's own emitter
+ * (`packages/core/src/output/stream-json-formatter.ts` and its call sites):
+ *
+ *   {"type":"message","role":"assistant","content":"...","delta":true}
+ *   {"type":"message","role":"user","content":"..."}        ← the prompt echo
+ *   {"type":"tool_use","tool_name":"...","tool_id":"...","parameters":{}}
+ *   {"type":"result","status":"success","stats":{...}}
+ *   {"type":"result","status":"error","error":{"type":"...","message":"..."}}
+ *
+ * The success `result` carries only stats, never the answer text, so
+ * accumulating the deltas cannot double-count.
+ */
+interface GeminiStreamEvent {
+  type?: unknown
+  role?: unknown
+  content?: unknown
+  delta?: unknown
+  status?: unknown
+  error?: { type?: unknown; message?: unknown }
+}
+
+/**
+ * Assistant text carried by one stream-json line, or null for every other
+ * event.
+ *
+ * The `role === "assistant"` test is what keeps the CLI's own echo of the
+ * prompt out of the answer: that echo is also a `message` event, just with
+ * `role: "user"` and no `delta`. Without the check, every turn would open by
+ * replaying the entire prompt — wiki context included — into the chat bubble.
+ */
+export function parseGeminiStreamLine(rawLine: string): string | null {
+  const line = rawLine.trim()
+  if (!line) return null
+
+  let event: unknown
+  try {
+    event = JSON.parse(line)
+  } catch {
+    return null
+  }
+  if (event === null || typeof event !== "object" || Array.isArray(event)) return null
+
+  const obj = event as GeminiStreamEvent
+  if (obj.type !== "message") return null
+  if (obj.role !== "assistant") return null
+  return typeof obj.content === "string" && obj.content.length > 0 ? obj.content : null
+}
+
+/**
+ * The error message from a stream-json `result` line, or null.
+ *
+ * A failed turn reports itself here rather than through the stdout envelope,
+ * so without this a stream-json error would surface only as a bare exit code.
+ */
+export function parseGeminiStreamError(rawLine: string): string | null {
+  const line = rawLine.trim()
+  if (!line) return null
+
+  let event: unknown
+  try {
+    event = JSON.parse(line)
+  } catch {
+    return null
+  }
+  if (event === null || typeof event !== "object" || Array.isArray(event)) return null
+
+  const obj = event as GeminiStreamEvent
+  if (obj.type !== "result" || obj.status !== "error") return null
+  const message = obj.error?.message
+  const kind = obj.error?.type
+  if (typeof message !== "string" || !message.trim()) {
+    return typeof kind === "string" && kind.trim() ? kind.trim() : "unknown error"
+  }
+  return typeof kind === "string" && kind.trim() ? `${kind}: ${message}` : message
+}
+
+const STREAM_EVENT_TYPES = new Set([
+  "init",
+  "message",
+  "tool_use",
+  "tool_result",
+  "error",
+  "result",
+])
+
+/**
+ * True when stdout is the JSONL stream rather than a single `-o json`
+ * envelope.
+ *
+ * This guards the envelope fallback. `parseGeminiCliOutput` treats anything
+ * it cannot parse as plain text, which is right for a CLI that printed prose
+ * — but applied to a multi-line JSONL buffer it would paste raw JSON events
+ * into the chat as if they were the answer.
+ */
+export function isStreamJsonOutput(stdout: string): boolean {
+  return stdout
+    .split("\n")
+    .some((line) => {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith("{")) return false
+      try {
+        const parsed: unknown = JSON.parse(trimmed)
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return false
+        const type = (parsed as { type?: unknown }).type
+        return typeof type === "string" && STREAM_EVENT_TYPES.has(type)
+      } catch {
+        return false
+      }
+    })
+}
+
 function contentToText(content: string | ContentBlock[]): string {
   if (typeof content === "string") return content
   return content
@@ -139,15 +255,24 @@ export async function streamGeminiCli(
   }
 
   const streamId = crypto.randomUUID()
+  let unlistenData: UnlistenFn | undefined
   let unlistenDone: UnlistenFn | undefined
   let finished = false
   let aborted = signal?.aborted ?? false
+  // Whether any assistant delta streamed. Decides between finishing on the
+  // deltas and falling back to parsing the whole stdout as a `-o json`
+  // envelope — the path a failed or non-streaming run takes.
+  let streamedText = false
+  // Error reported by a stream-json `result` line. Kept rather than raised
+  // immediately so the done handler reports it alongside the exit code.
+  let streamError: string | null = null
   let resolveCompletion: () => void = () => {}
   const completion = new Promise<void>((resolve) => {
     resolveCompletion = resolve
   })
 
   const cleanup = () => {
+    unlistenData?.()
     unlistenDone?.()
   }
 
@@ -171,13 +296,93 @@ export async function streamGeminiCli(
   signal?.addEventListener("abort", abortListener)
 
   try {
+    // Listen before spawning so the first event on a fast turn is not missed.
+    unlistenData = await listen<string>(`gemini-cli:${streamId}`, (event) => {
+      const token = parseGeminiStreamLine(event.payload)
+      if (token !== null) {
+        streamedText = true
+        onToken(token)
+        return
+      }
+      streamError ??= parseGeminiStreamError(event.payload)
+    })
+    if (aborted || finished) {
+      cleanup()
+      return
+    }
+
     unlistenDone = await listen<{ code: number | null; stderr: string; stdout?: string }>(
       `gemini-cli:${streamId}:done`,
       (event) => {
         const code = event.payload?.code
         const stderr = event.payload?.stderr?.trim() ?? ""
         const stdout = event.payload?.stdout ?? ""
-        const parsed = parseGeminiCliOutput(stdout, stderr)
+
+        // A stream-json `result` error is the most specific diagnosis there
+        // is, and it arrives even when text streamed first — so check it
+        // before treating a streamed turn as a success.
+        if (streamError) {
+          const hint = geminiAuthHint(streamError)
+          const message = streamError
+          finishWith(() =>
+            onError(new Error(
+              `Gemini CLI rejected the request: ${message}${hint ? `\n${hint}` : ""}`,
+            )),
+          )
+          return
+        }
+
+        // Text already streamed as deltas: the answer is in the chat, and the
+        // stdout buffer holds the same text split across JSONL lines. Parsing
+        // it again would append the whole answer a second time.
+        if (streamedText) {
+          if (code !== null && code !== undefined && code !== 0) {
+            const details = stderr || stdout.trim()
+            finishWith(() =>
+              onError(new Error(
+                details
+                  ? `Gemini CLI exited with code ${code} after streaming a partial answer:\n${details}`
+                  : `Gemini CLI exited with code ${code} after streaming a partial answer.`,
+              )),
+            )
+            return
+          }
+          finishWith(onDone)
+          return
+        }
+
+        // No delta reached the live listener. Re-read the buffered stdout as
+        // a stream first — an event could have been missed — and only then
+        // as the single `-o json` envelope.
+        const bufferedStreamText = stdout
+          .split("\n")
+          .map(parseGeminiStreamLine)
+          .filter((token): token is string => token !== null)
+          .join("")
+        if (bufferedStreamText) {
+          onToken(bufferedStreamText)
+          finishWith(onDone)
+          return
+        }
+        for (const line of stdout.split("\n")) {
+          const bufferedError = parseGeminiStreamError(line)
+          if (bufferedError) {
+            const hint = geminiAuthHint(bufferedError)
+            finishWith(() =>
+              onError(new Error(
+                `Gemini CLI rejected the request: ${bufferedError}${hint ? `\n${hint}` : ""}`,
+              )),
+            )
+            return
+          }
+        }
+
+        // A JSONL buffer with no assistant text is an empty answer, not prose.
+        // Reporting it through the envelope path would paste raw events into
+        // the chat, since anything unparseable is treated as plain text.
+        const parsed = isStreamJsonOutput(stdout)
+          ? { text: "", error: null }
+          : parseGeminiCliOutput(stdout, stderr)
 
         // The envelope's own error message is more specific than the exit
         // code, so it wins when both are present.
